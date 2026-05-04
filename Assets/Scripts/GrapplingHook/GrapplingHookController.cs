@@ -6,14 +6,15 @@ public class GrapplingHookController : MonoBehaviour
     [SerializeField] Transform ropeOrigin;
     [SerializeField] HookProjectile hookPrefab;
     [SerializeField] RopeController ropeController;
-    [SerializeField] float hookFireSpeed = 45f;
+    [SerializeField] float hookFireSpeed = 28f;
     [SerializeField] float maxRopeLength = 35f;
     [SerializeField] LayerMask grappleMask = ~0;
     [SerializeField] LayerMask ropeCollisionMask = ~0;
     [SerializeField] float hookRadius = 0.15f;
+    [SerializeField] bool useInstantAttachProbe = false;
     [SerializeField] float directAttachProbeRadius = 0.35f;
     [SerializeField] float hookSpawnForwardOffset = 0.75f;
-    [SerializeField, Range(0f, 1f)] float minAttachSurfaceUpDot = 0.72f;
+    [SerializeField, Range(0f, 1f)] float minAttachSurfaceUpDot = 0.92f;
 
     HookProjectile activeHook;
     Vector3 fireOrigin;
@@ -45,6 +46,20 @@ public class GrapplingHookController : MonoBehaviour
 
         if (State == GrappleState.Flying && activeHook != null)
         {
+            if (ropeController != null && ropeController.IsAttached)
+            {
+                State = GrappleState.Wrapped;
+                StopHookPhysics();
+                return;
+            }
+
+            if (ropeController != null && ropeController.TryAttachToFiringWrap(ropeCollisionMask))
+            {
+                State = GrappleState.Wrapped;
+                StopHookPhysics();
+                return;
+            }
+
             if (Vector3.Distance(fireOrigin, activeHook.transform.position) >= maxRopeLength)
             {
                 CancelGrapple();
@@ -70,13 +85,12 @@ public class GrapplingHookController : MonoBehaviour
         if (ropeController != null) ropeController.BeginFiring(activeHook.transform, maxRopeLength);
 
         RaycastHit hit;
-        if (TryFindDirectAttach(out hit))
+        if (useInstantAttachProbe && TryFindDirectAttach(out hit))
         {
             GrapplePoint point = hit.collider.GetComponentInParent<GrapplePoint>();
             AttachAt(point != null ? point.AttachTransform.position : hit.point, point);
             activeHook.transform.position = point != null ? point.AttachTransform.position : hit.point;
-            activeHook.Rigidbody.isKinematic = true;
-            activeHook.Rigidbody.linearVelocity = Vector3.zero;
+            StopHookPhysics();
         }
     }
 
@@ -120,6 +134,13 @@ public class GrapplingHookController : MonoBehaviour
     public void Detach()
     {
         CancelGrapple();
+    }
+
+    void StopHookPhysics()
+    {
+        if (activeHook == null || activeHook.Rigidbody == null) return;
+        activeHook.Rigidbody.isKinematic = true;
+        activeHook.Rigidbody.linearVelocity = Vector3.zero;
     }
 
     void IgnorePlayerCollision(HookProjectile hook)

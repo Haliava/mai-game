@@ -9,8 +9,9 @@ public class HookProjectile : MonoBehaviour
     GrapplingHookController owner;
     LayerMask grappleMask;
     bool armed;
-    float slideDamping = 0.8f;
-    float slideDownForce = 12f;
+    [SerializeField] float hookMass = 0.25f;
+    [SerializeField] float slideDamping = 0.8f;
+    [SerializeField] float slideDownForce = 12f;
 
     public Rigidbody Rigidbody { get { return rb; } }
 
@@ -31,6 +32,10 @@ public class HookProjectile : MonoBehaviour
         transform.position = position;
         transform.rotation = Quaternion.LookRotation(velocity.normalized, Vector3.up);
         rb.isKinematic = false;
+        rb.useGravity = true;
+        rb.mass = hookMass;
+        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        rb.interpolation = RigidbodyInterpolation.Interpolate;
         rb.linearVelocity = velocity;
         hookLight.enabled = true;
     }

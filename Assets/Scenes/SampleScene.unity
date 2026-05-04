@@ -14,13 +14,13 @@ OcclusionCullingSettings:
 RenderSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 10
-  m_Fog: 1
+  m_Fog: 0
   m_FogColor: {r: 0.01, g: 0.012, b: 0.014, a: 1}
   m_FogMode: 3
-  m_FogDensity: 0.055
+  m_FogDensity: 0
   m_LinearFogStart: 0
   m_LinearFogEnd: 300
-  m_AmbientSkyColor: {r: 0.005, g: 0.006, b: 0.008, a: 1}
+  m_AmbientSkyColor: {r: 0.075, g: 0.082, b: 0.09, a: 1}
   m_AmbientEquatorColor: {r: 0.114, g: 0.125, b: 0.133, a: 1}
   m_AmbientGroundColor: {r: 0.047, g: 0.043, b: 0.035, a: 1}
   m_AmbientIntensity: 1
@@ -35,7 +35,7 @@ RenderSettings:
   m_DefaultReflectionMode: 0
   m_DefaultReflectionResolution: 128
   m_ReflectionBounces: 1
-  m_ReflectionIntensity: 0.05
+  m_ReflectionIntensity: 0.18
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
   m_UseRadianceAmbientProbe: 0
@@ -150,7 +150,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PrototypeGameManager
   player: {fileID: 196104462}
   damageController: {fileID: 196104461}
-  lastSafePosition: {x: 0, y: 3, z: 0}
+  lastSafePosition: {x: 72, y: 3, z: 0}
   deathY: -380
   winDepth: -300
   reloadOnDeath: 0
@@ -1808,7 +1808,7 @@ Transform:
   m_GameObject: {fileID: 196104460}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 4, z: 0}
+  m_LocalPosition: {x: 72, y: 3, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -1831,18 +1831,18 @@ MonoBehaviour:
   ropeOrigin: {fileID: 481904119}
   hookPrefab: {fileID: 1083607984}
   ropeController: {fileID: 196104469}
-  hookFireSpeed: 45
+  hookFireSpeed: 28
   maxRopeLength: 35
   grappleMask:
     serializedVersion: 2
-    m_Bits: 4294967039
+    m_Bits: 15927
   ropeCollisionMask:
     serializedVersion: 2
-    m_Bits: 4294967039
+    m_Bits: 15927
   hookRadius: 0.15
   directAttachProbeRadius: 0.25
   hookSpawnForwardOffset: 0.75
-  minAttachSurfaceUpDot: 0.72
+  minAttachSurfaceUpDot: 0.92
 --- !u!114 &196104464
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1921,6 +1921,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FirstPersonController
   walkSpeed: 5
+  sprintMultiplier: 1.65
   airControlMultiplier: 0.45
   jumpForce: 6.5
   customGravityMultiplier: 1.25
@@ -1950,7 +1951,7 @@ MonoBehaviour:
   maxRopeLength: 35
   minRopeLength: 2
   ropeClimbSpeed: 6
-  swingForce: 14
+  swingForce: 12
   ropeConstraintStrength: 0
   ropeDamping: 0
   hardConstraint: 1
@@ -1960,14 +1961,14 @@ MonoBehaviour:
   exhaustedSwingMultiplier: 0.08
   tangentialAirResistance: 0.012
   inwardVelocityPreservation: 0.85
-  initialSwingKickForce: 2.5
-  steeringBrakeForce: 4
+  initialSwingKickForce: 1.25
+  steeringBrakeForce: 2.5
   maxPoweredAngleFromDown: 55
   upwardSwingForceMultiplier: 0.02
   ropeGravityMultiplier: 2.2
   ropeCollisionMask:
     serializedVersion: 2
-    m_Bits: 4294967039
+    m_Bits: 15927
   wrapPointOffset: 0.2
 --- !u!120 &196104470
 LineRenderer:
@@ -2244,12 +2245,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 00c016fdf961652439a32587754d5a9c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerLightController
-  lightRange: 180
-  centerIntensity: 2.2
-  edgeIntensity: 1.05
-  centerBrightRadius: 60
+  lightRange: 130
+  centerIntensity: 1.8
+  edgeIntensity: 1.15
+  centerBrightRadius: 70
   edgeRadius: 160
-  lightColor: {r: 0.72, g: 0.82, b: 1, a: 1}
+  lightColor: {r: 0.82, g: 0.9, b: 1, a: 1}
 --- !u!108 &196104478
 Light:
   m_ObjectHideFlags: 0
@@ -2260,9 +2261,9 @@ Light:
   m_Enabled: 1
   serializedVersion: 13
   m_Type: 2
-  m_Color: {r: 0.72, g: 0.82, b: 1, a: 1}
-  m_Intensity: 2.2
-  m_Range: 180
+  m_Color: {r: 0.82, g: 0.9, b: 1, a: 1}
+  m_Intensity: 1.8
+  m_Range: 130
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
   m_CookieSize2D: {x: 0.5, y: 0.5}
@@ -3952,8 +3953,8 @@ Light:
   m_Enabled: 1
   serializedVersion: 13
   m_Type: 1
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_Intensity: 0.03
+  m_Color: {r: 0.74, g: 0.82, b: 1, a: 1}
+  m_Intensity: 0.45
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
@@ -12261,7 +12262,7 @@ Rigidbody:
     m_Bits: 0
   m_ImplicitCom: 1
   m_ImplicitTensor: 1
-  m_UseGravity: 1
+  m_UseGravity: 0
   m_IsKinematic: 0
   m_Interpolate: 0
   m_Constraints: 112
@@ -12275,7 +12276,7 @@ Transform:
   m_GameObject: {fileID: 1411083493}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 8, z: 12}
+  m_LocalPosition: {x: 154, y: 8, z: 10}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:

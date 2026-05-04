@@ -9,6 +9,9 @@ public class CentipedeBodyController : MonoBehaviour
     [SerializeField] float segmentSpacing = 1.2f;
     [SerializeField] float followSpeed = 8f;
     [SerializeField] float bodySmoothing = 0.15f;
+    [SerializeField] LayerMask surfaceMask = ~0;
+    [SerializeField] float surfaceRayDistance = 10f;
+    [SerializeField] float surfaceOffset = 0.55f;
     [SerializeField] Material bodyMaterial;
 
     public Transform Head { get { return head; } }
@@ -28,6 +31,10 @@ public class CentipedeBodyController : MonoBehaviour
             headGo.transform.SetParent(transform, false);
             headGo.transform.localScale = Vector3.one * 1.2f;
             head = headGo.transform;
+            Rigidbody headRb = headGo.GetComponent<Rigidbody>();
+            if (headRb == null) headRb = headGo.AddComponent<Rigidbody>();
+            headRb.isKinematic = true;
+            headRb.useGravity = false;
             ApplyMaterial(headGo);
         }
 
@@ -39,9 +46,15 @@ public class CentipedeBodyController : MonoBehaviour
             segment.transform.SetParent(transform, true);
             segment.transform.position = head.position - transform.forward * segmentSpacing * (i + 1);
             segment.transform.localScale = Vector3.one;
+            Rigidbody rb = segment.GetComponent<Rigidbody>();
+            if (rb == null) rb = segment.AddComponent<Rigidbody>();
+            rb.isKinematic = true;
+            rb.useGravity = false;
+            rb.interpolation = RigidbodyInterpolation.Interpolate;
             ApplyMaterial(segment);
             CentipedeSegment follower = segment.AddComponent<CentipedeSegment>();
             follower.Configure(previous, segmentSpacing, followSpeed * Mathf.Clamp01(1f - bodySmoothing));
+            follower.ConfigureSurface(surfaceMask, surfaceRayDistance, surfaceOffset);
             segments.Add(segment.transform);
             previous = segment.transform;
         }

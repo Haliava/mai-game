@@ -22,6 +22,8 @@ public class ProceduralLevelGenerator : MonoBehaviour
     [SerializeField] float centerClearRadius = 42f;
     [SerializeField] float centerSparseRadius = 62f;
     [SerializeField, Range(0f, 1f)] float centerSpawnChance = 0.02f;
+    [SerializeField] Vector3 startPlatformPosition = new Vector3(72f, 0f, 0f);
+    [SerializeField] Vector3 playerStartPosition = new Vector3(72f, 3f, 0f);
     [SerializeField] int maxRandomPointAttempts = 16;
     [SerializeField, Range(0f, 1f)] float overlappingStructureChance = 0.35f;
     [SerializeField] int maxOverlappingStructures = 1;
@@ -38,6 +40,7 @@ public class ProceduralLevelGenerator : MonoBehaviour
     public Vector3 ChunkSize { get { return chunkSize; } }
     public float GameAreaRadius { get { return chunkSize.x * gameAreaDiameterInChunks * 0.5f; } }
     public float SpawnAreaRadius { get { return Mathf.Max(8f, GameAreaRadius - gameAreaBoundaryMargin); } }
+    public Vector3 PlayerStartPosition { get { return playerStartPosition; } }
 
     void Awake()
     {
@@ -92,10 +95,21 @@ public class ProceduralLevelGenerator : MonoBehaviour
     List<Vector3> BuildRoute(LevelChunk chunk)
     {
         List<Vector3> route = new List<Vector3>();
-        Vector2 startPlanar = Random.insideUnitCircle.normalized;
-        if (startPlanar.sqrMagnitude < 0.01f) startPlanar = Vector2.right;
-        startPlanar *= Random.Range(centerSparseRadius, Mathf.Min(SpawnAreaRadius, centerSparseRadius + 18f));
-        Vector3 current = chunk.chunkOrigin + new Vector3(startPlanar.x, -3f, startPlanar.y);
+        Vector2 startPlanar;
+        Vector3 current;
+        if (chunk.chunkIndex == 0)
+        {
+            current = ClampToGameArea(startPlatformPosition);
+            startPlanar = new Vector2(current.x, current.z).normalized;
+            if (startPlanar.sqrMagnitude < 0.01f) startPlanar = Vector2.right;
+        }
+        else
+        {
+            startPlanar = Random.insideUnitCircle.normalized;
+            if (startPlanar.sqrMagnitude < 0.01f) startPlanar = Vector2.right;
+            startPlanar *= Random.Range(centerSparseRadius, Mathf.Min(SpawnAreaRadius, centerSparseRadius + 18f));
+            current = chunk.chunkOrigin + new Vector3(startPlanar.x, -3f, startPlanar.y);
+        }
         route.Add(current);
         float bottom = chunk.chunkOrigin.y - chunkSize.y + 5f;
         while (current.y > bottom)

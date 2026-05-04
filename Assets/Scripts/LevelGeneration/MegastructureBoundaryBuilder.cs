@@ -10,6 +10,10 @@ public class MegastructureBoundaryBuilder : MonoBehaviour
     [SerializeField] int heightInChunks = 12;
     [SerializeField] float wallThickness = 3f;
     [SerializeField] float wallTopY = 20f;
+    [SerializeField] bool buildBottomOccluder = true;
+    [SerializeField] float bottomOccluderExtraDepth = 12f;
+    [SerializeField] float bottomOccluderThickness = 3f;
+    [SerializeField] Color bottomOccluderColor = new Color(0.002f, 0.002f, 0.004f, 1f);
     [SerializeField] bool buildOnStart = true;
 
     Transform wallRoot;
@@ -57,6 +61,23 @@ public class MegastructureBoundaryBuilder : MonoBehaviour
 
             Renderer renderer = wall.GetComponent<Renderer>();
             if (renderer != null && wallMaterial != null) renderer.sharedMaterial = wallMaterial;
+        }
+
+        if (buildBottomOccluder)
+        {
+            GameObject bottom = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            bottom.name = "AbyssBottomOccluder";
+            bottom.transform.SetParent(wallRoot, false);
+            bottom.transform.position = Vector3.up * (wallTopY - height - bottomOccluderExtraDepth);
+            bottom.transform.localScale = new Vector3(radius * 2.05f, bottomOccluderThickness * 0.5f, radius * 2.05f);
+
+            Renderer renderer = bottom.GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                Material material = wallMaterial != null ? new Material(wallMaterial) : new Material(Shader.Find("Standard"));
+                material.color = bottomOccluderColor;
+                renderer.sharedMaterial = material;
+            }
         }
     }
 

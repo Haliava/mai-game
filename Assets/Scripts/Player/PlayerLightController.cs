@@ -3,12 +3,12 @@ using UnityEngine;
 [RequireComponent(typeof(Light))]
 public class PlayerLightController : MonoBehaviour
 {
-    [SerializeField] float lightRange = 360f;
-    [SerializeField] float centerIntensity = 7f;
-    [SerializeField] float edgeIntensity = 4.5f;
-    [SerializeField] float centerBrightRadius = 90f;
-    [SerializeField] float edgeRadius = 180f;
-    [SerializeField] Color lightColor = new Color(0.72f, 0.82f, 1f);
+    [SerializeField] float lightRange = 130f;
+    [SerializeField] float centerIntensity = 1.8f;
+    [SerializeField] float edgeIntensity = 1.15f;
+    [SerializeField] float centerBrightRadius = 70f;
+    [SerializeField] float edgeRadius = 160f;
+    [SerializeField] Color lightColor = new Color(0.82f, 0.9f, 1f);
 
     Light playerLight;
 
@@ -32,10 +32,10 @@ public class PlayerLightController : MonoBehaviour
 
     void UpgradeLegacyLightValues()
     {
-        if (lightRange < 300f) lightRange = 360f;
-        if (centerIntensity < 6f) centerIntensity = 7f;
-        if (edgeIntensity < 4f) edgeIntensity = 4.5f;
-        if (centerBrightRadius < 80f) centerBrightRadius = 90f;
-        if (edgeRadius < 170f) edgeRadius = 180f;
+        if (lightRange > 220f || lightRange < 80f) lightRange = 130f;
+        if (centerIntensity > 6f || centerIntensity < 0.8f) centerIntensity = 1.8f;
+        if (edgeIntensity > 4f || edgeIntensity < 0.5f) edgeIntensity = 1.15f;
+        if (centerBrightRadius > 140f || centerBrightRadius < 40f) centerBrightRadius = 70f;
+        if (edgeRadius > 240f || edgeRadius < 100f) edgeRadius = 160f;
     }
 }

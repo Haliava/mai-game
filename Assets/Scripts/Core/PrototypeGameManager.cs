@@ -5,7 +5,7 @@ public class PrototypeGameManager : MonoBehaviour
 {
     [SerializeField] Transform player;
     [SerializeField] PlayerDamageController damageController;
-    [SerializeField] Vector3 lastSafePosition = new Vector3(0f, 3f, 0f);
+    [SerializeField] Vector3 lastSafePosition = new Vector3(46f, 2.1f, 0f);
     [SerializeField] float deathY = -380f;
     [SerializeField] float winDepth = -300f;
     [SerializeField] bool reloadOnDeath = false;

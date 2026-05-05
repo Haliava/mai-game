@@ -5,7 +5,7 @@ using UnityEngine;
 public class CentipedeMonsterController : MonoBehaviour
 {
     [SerializeField] Transform player;
-    [SerializeField] float moveSpeed = 5f;
+    [SerializeField] float moveSpeed = 1.65f;
     [SerializeField] float turnSpeed = 8f;
     [SerializeField] float surfaceRayDistance = 12f;
     [SerializeField] float surfaceOffset = 0.85f;
@@ -13,8 +13,10 @@ public class CentipedeMonsterController : MonoBehaviour
     [SerializeField] LayerMask groundMask = ~0;
     [SerializeField] float walkableDistance = 8f;
     [SerializeField] float attackRange = 2.5f;
-    [SerializeField] float monsterAggressionByDepth = 0.01f;
+    [SerializeField] float monsterAggressionByDepth = 0.002f;
     [SerializeField] bool canClimbWalls = true;
+    [SerializeField] float stalledMoveJumpDistance = 4f;
+    [SerializeField] float minMoveDirectionSqrMagnitude = 0.01f;
     [SerializeField] MonsterPathfinder pathfinder;
     [SerializeField] MonsterJumpController jumpController;
     [SerializeField] CentipedeBodyController bodyController;
@@ -22,6 +24,7 @@ public class CentipedeMonsterController : MonoBehaviour
     Rigidbody rb;
     List<NavigationNode> currentPath = new List<NavigationNode>();
     Vector3 surfaceNormal = Vector3.up;
+    bool hasSurface;
     int pathIndex;
     float repathTime;
 
@@ -48,21 +51,48 @@ public class CentipedeMonsterController : MonoBehaviour
     void FixedUpdate()
     {
         if (player == null) return;
-        StickToSurface();
+
+        hasSurface = StickToSurface();
+        if (!hasSurface)
+        {
+            TryRecoverSurface();
+            return;
+        }
 
         Vector3 target = GetTarget();
-        Vector3 toTarget = Vector3.ProjectOnPlane(target - transform.position, surfaceNormal);
-        if (toTarget.sqrMagnitude > 0.25f)
+        Vector3 moveDirection = GetSurfaceMoveDirection(target);
+
+        if (moveDirection.sqrMagnitude < minMoveDirectionSqrMagnitude)
         {
-            Quaternion look = Quaternion.LookRotation(toTarget.normalized, surfaceNormal);
+            moveDirection = GetSurfaceMoveDirection(player.position);
+        }
+
+        if (moveDirection.sqrMagnitude < minMoveDirectionSqrMagnitude)
+        {
+            moveDirection = GetFallbackMoveDirection(target);
+            if (jumpController != null && Vector3.Distance(transform.position, player.position) > stalledMoveJumpDistance)
+            {
+                jumpController.TryJumpTo(player.position, groundMask, surfaceOffset);
+            }
+        }
+
+        if (moveDirection.sqrMagnitude > 0.001f)
+        {
+            Quaternion look = Quaternion.LookRotation(moveDirection.normalized, surfaceNormal);
             transform.rotation = Quaternion.Slerp(transform.rotation, look, turnSpeed * Time.fixedDeltaTime);
             float depthBoost = Mathf.Max(0f, -player.position.y) * monsterAggressionByDepth;
-            rb.MovePosition(rb.position + transform.forward * (moveSpeed + depthBoost) * Time.fixedDeltaTime);
+            float jumpSpeedMultiplier = jumpController != null ? jumpController.MoveSpeedMultiplier : 1f;
+            rb.MovePosition(rb.position + transform.forward * (moveSpeed + depthBoost) * jumpSpeedMultiplier * Time.fixedDeltaTime);
         }
     }
 
     Vector3 GetTarget()
     {
+        if (jumpController != null && jumpController.HasJumpAssist)
+        {
+            return jumpController.ActiveJumpTarget;
+        }
+
         if (Time.time >= repathTime && pathfinder != null)
         {
             currentPath = pathfinder.FindPath(transform.position, player.position);
@@ -73,22 +103,73 @@ public class CentipedeMonsterController : MonoBehaviour
         if (currentPath != null && pathIndex >= 0 && pathIndex < currentPath.Count && currentPath[pathIndex] != null)
         {
             Vector3 nodeTarget = currentPath[pathIndex].Position;
-            if (Vector3.Distance(transform.position, nodeTarget) < 2f) pathIndex = Mathf.Min(pathIndex + 1, currentPath.Count - 1);
-            if (Vector3.Distance(transform.position, nodeTarget) > walkableDistance && jumpController != null) jumpController.TryJumpTo(nodeTarget);
+            float distanceToNode = Vector3.Distance(transform.position, nodeTarget);
+            if (distanceToNode < 2f)
+            {
+                if (pathIndex < currentPath.Count - 1)
+                {
+                    pathIndex++;
+                    nodeTarget = currentPath[pathIndex].Position;
+                    distanceToNode = Vector3.Distance(transform.position, nodeTarget);
+                }
+                else
+                {
+                    return player.position;
+                }
+            }
+
+            float verticalDelta = Mathf.Abs(nodeTarget.y - transform.position.y);
+            if ((distanceToNode > walkableDistance || verticalDelta > 2.5f) && jumpController != null)
+            {
+                if (jumpController.TryJumpTo(nodeTarget, groundMask, surfaceOffset))
+                {
+                    return nodeTarget;
+                }
+            }
             return nodeTarget;
         }
 
         return player.position;
     }
 
-    void StickToSurface()
+    Vector3 GetSurfaceMoveDirection(Vector3 target)
+    {
+        return Vector3.ProjectOnPlane(target - transform.position, surfaceNormal);
+    }
+
+    Vector3 GetFallbackMoveDirection(Vector3 target)
+    {
+        Vector3 toTarget = target - transform.position;
+        Vector3 vertical = Vector3.ProjectOnPlane(toTarget.y >= 0f ? Vector3.up : Vector3.down, surfaceNormal);
+        if (vertical.sqrMagnitude > 0.001f) return vertical;
+
+        Vector3 radial = new Vector3(transform.position.x, 0f, transform.position.z);
+        if (radial.sqrMagnitude < 0.01f) radial = transform.right;
+        Vector3 aroundWall = Vector3.Cross(surfaceNormal, radial.normalized);
+        if (Vector3.Dot(aroundWall, toTarget) < 0f) aroundWall = -aroundWall;
+        return Vector3.ProjectOnPlane(aroundWall, surfaceNormal);
+    }
+
+    bool StickToSurface()
     {
         RaycastHit hit;
-        if (!TryFindSurface(out hit)) return;
+        if (!TryFindSurface(out hit)) return false;
 
         surfaceNormal = Vector3.Slerp(surfaceNormal, hit.normal, surfaceStickSpeed * Time.fixedDeltaTime).normalized;
         Vector3 targetPosition = hit.point + surfaceNormal * surfaceOffset;
         rb.MovePosition(Vector3.Lerp(rb.position, targetPosition, surfaceStickSpeed * Time.fixedDeltaTime));
+        return true;
+    }
+
+    void TryRecoverSurface()
+    {
+        RaycastHit hit;
+        if (!Physics.Raycast(transform.position, Vector3.down, out hit, surfaceRayDistance * 2f, groundMask, QueryTriggerInteraction.Ignore)) return;
+        if (hit.collider != null && hit.collider.transform.IsChildOf(transform)) return;
+
+        surfaceNormal = hit.normal;
+        Vector3 targetPosition = hit.point + surfaceNormal * surfaceOffset;
+        rb.MovePosition(Vector3.MoveTowards(rb.position, targetPosition, surfaceStickSpeed * Time.fixedDeltaTime));
     }
 
     bool TryFindSurface(out RaycastHit bestHit)

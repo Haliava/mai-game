@@ -14,16 +14,18 @@ public class ProceduralLevelGenerator : MonoBehaviour
     [SerializeField] GameObject grapplePointPrefab;
     [SerializeField] int seed = 12345;
     [SerializeField] bool useRandomSeed = true;
-    [SerializeField] int gameAreaDiameterInChunks = 4;
-    [SerializeField] float gameAreaBoundaryMargin = 16f;
+    [SerializeField] int gameAreaDiameterInChunks = 2;
+    [SerializeField] float gameAreaBoundaryMargin = 8f;
+    [SerializeField] float wallEmbedDepth = 8f;
+    [SerializeField, Range(0f, 1f)] float wallEmbeddedObstacleChance = 0.45f;
     [SerializeField] float maxReachableDistance = 28f;
     [SerializeField] float verticalStepMin = 5f;
     [SerializeField] float verticalStepMax = 14f;
-    [SerializeField] float centerClearRadius = 42f;
-    [SerializeField] float centerSparseRadius = 62f;
+    [SerializeField] float centerClearRadius = 24f;
+    [SerializeField] float centerSparseRadius = 38f;
     [SerializeField, Range(0f, 1f)] float centerSpawnChance = 0.02f;
-    [SerializeField] Vector3 startPlatformPosition = new Vector3(72f, 0f, 0f);
-    [SerializeField] Vector3 playerStartPosition = new Vector3(72f, 3f, 0f);
+    [SerializeField] Vector3 startPlatformPosition = new Vector3(46f, 0f, 0f);
+    [SerializeField] Vector3 playerStartPosition = new Vector3(46f, 2.1f, 0f);
     [SerializeField] int maxRandomPointAttempts = 16;
     [SerializeField, Range(0f, 1f)] float overlappingStructureChance = 0.35f;
     [SerializeField] int maxOverlappingStructures = 1;
@@ -31,6 +33,7 @@ public class ProceduralLevelGenerator : MonoBehaviour
     [SerializeField] float overlappingStructureRadius = 11f;
     [SerializeField] Material stoneMaterial;
     [SerializeField] Material grappleMaterial;
+    [SerializeField] bool clearBakedChunksOnAwake = true;
 
     readonly Dictionary<int, LevelChunk> chunks = new Dictionary<int, LevelChunk>();
     readonly List<NavigationNode> allNodes = new List<NavigationNode>();
@@ -44,7 +47,23 @@ public class ProceduralLevelGenerator : MonoBehaviour
 
     void Awake()
     {
+        if (clearBakedChunksOnAwake) ClearBakedChunks();
         runtimeSeed = useRandomSeed ? Random.Range(int.MinValue, int.MaxValue) : seed;
+    }
+
+    void ClearBakedChunks()
+    {
+        for (int i = transform.childCount - 1; i >= 0; i--)
+        {
+            Transform child = transform.GetChild(i);
+            if (child == null || !child.name.StartsWith("LevelChunk_")) continue;
+
+            if (Application.isPlaying) Destroy(child.gameObject);
+            else DestroyImmediate(child.gameObject);
+        }
+
+        chunks.Clear();
+        allNodes.Clear();
     }
 
     public LevelChunk GenerateChunk(int chunkIndex)
@@ -72,10 +91,10 @@ public class ProceduralLevelGenerator : MonoBehaviour
         }
 
         int columnCount = Mathf.Max(1, Mathf.RoundToInt(Random.Range(minColumnsPerChunk, maxColumnsPerChunk + 1) * 0.35f));
-        for (int i = 0; i < columnCount; i++) CreateColumn(chunk, RandomPointInChunk(chunk, true));
+        for (int i = 0; i < columnCount; i++) CreateColumn(chunk, RandomPointInChunk(chunk, true, true));
 
         int ruinCount = Mathf.Max(1, Mathf.RoundToInt(Random.Range(minRuinsPerChunk, maxRuinsPerChunk + 1) * 0.35f));
-        for (int i = 0; i < ruinCount; i++) CreateRuinCluster(chunk, RandomPointInChunk(chunk, true));
+        for (int i = 0; i < ruinCount; i++) CreateRuinCluster(chunk, RandomPointInChunk(chunk, true, true));
 
         ConnectNearbyNodes(chunk.navigationNodes);
         return chunk;
@@ -132,10 +151,16 @@ public class ProceduralLevelGenerator : MonoBehaviour
 
     Vector3 RandomPointInChunk(LevelChunk chunk, bool avoidCenter)
     {
+        return RandomPointInChunk(chunk, avoidCenter, false);
+    }
+
+    Vector3 RandomPointInChunk(LevelChunk chunk, bool avoidCenter, bool allowWallEmbed)
+    {
         Vector3 point = chunk.chunkOrigin;
         for (int i = 0; i < maxRandomPointAttempts; i++)
         {
-            Vector2 planar = Random.insideUnitCircle * SpawnAreaRadius;
+            float radius = GetRandomSpawnRadius(allowWallEmbed);
+            Vector2 planar = Random.insideUnitCircle.normalized * Random.Range(0f, radius);
             point = chunk.chunkOrigin + new Vector3(
                 planar.x,
                 Random.Range(-chunkSize.y + 4f, -2f),
@@ -146,16 +171,32 @@ public class ProceduralLevelGenerator : MonoBehaviour
 
         Vector2 direction = Random.insideUnitCircle.normalized;
         if (direction.sqrMagnitude < 0.01f) direction = Vector2.right;
+        float fallbackRadius = GetRandomSpawnRadius(allowWallEmbed);
         return chunk.chunkOrigin + new Vector3(
-            direction.x * Random.Range(centerSparseRadius, SpawnAreaRadius),
+            direction.x * Random.Range(centerSparseRadius, fallbackRadius),
             Random.Range(-chunkSize.y + 4f, -2f),
-            direction.y * Random.Range(centerSparseRadius, SpawnAreaRadius));
+            direction.y * Random.Range(centerSparseRadius, fallbackRadius));
+    }
+
+    float GetRandomSpawnRadius(bool allowWallEmbed)
+    {
+        if (!allowWallEmbed || Random.value > wallEmbeddedObstacleChance) return SpawnAreaRadius;
+        return GameAreaRadius + wallEmbedDepth;
     }
 
     Vector3 ClampToGameArea(Vector3 point)
     {
+        return ClampToRadius(point, SpawnAreaRadius);
+    }
+
+    Vector3 ClampToObstacleArea(Vector3 point)
+    {
+        return ClampToRadius(point, GameAreaRadius + wallEmbedDepth);
+    }
+
+    Vector3 ClampToRadius(Vector3 point, float radius)
+    {
         Vector2 planar = new Vector2(point.x, point.z);
-        float radius = SpawnAreaRadius;
         if (planar.magnitude > radius)
         {
             planar = planar.normalized * radius;
@@ -231,7 +272,7 @@ public class ProceduralLevelGenerator : MonoBehaviour
             if (direction.sqrMagnitude < 0.01f) direction = Vector2.right;
             Vector2 offset = direction * Random.Range(overlappingStructureMinRadius, overlappingStructureRadius);
             Vector3 overlapPosition = position + new Vector3(offset.x, Random.Range(-0.6f, 1.4f), offset.y);
-            overlapPosition = ClampToGameArea(overlapPosition);
+            overlapPosition = ClampToObstacleArea(overlapPosition);
             CreateRuin(chunk, overlapPosition, Random.Range(0.85f, 1.2f));
         }
     }

@@ -20,9 +20,9 @@ RenderSettings:
   m_FogDensity: 0
   m_LinearFogStart: 0
   m_LinearFogEnd: 300
-  m_AmbientSkyColor: {r: 0.075, g: 0.082, b: 0.09, a: 1}
-  m_AmbientEquatorColor: {r: 0.114, g: 0.125, b: 0.133, a: 1}
-  m_AmbientGroundColor: {r: 0.047, g: 0.043, b: 0.035, a: 1}
+  m_AmbientSkyColor: {r: 0.16, g: 0.18, b: 0.2, a: 1}
+  m_AmbientEquatorColor: {r: 0.16, g: 0.18, b: 0.2, a: 1}
+  m_AmbientGroundColor: {r: 0.16, g: 0.18, b: 0.2, a: 1}
   m_AmbientIntensity: 1
   m_AmbientMode: 0
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
@@ -35,7 +35,7 @@ RenderSettings:
   m_DefaultReflectionMode: 0
   m_DefaultReflectionResolution: 128
   m_ReflectionBounces: 1
-  m_ReflectionIntensity: 0.18
+  m_ReflectionIntensity: 0.28
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
   m_UseRadianceAmbientProbe: 0
@@ -150,7 +150,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PrototypeGameManager
   player: {fileID: 196104462}
   damageController: {fileID: 196104461}
-  lastSafePosition: {x: 72, y: 3, z: 0}
+  lastSafePosition: {x: 46, y: 2.1, z: 0}
   deathY: -380
   winDepth: -300
   reloadOnDeath: 0
@@ -1808,7 +1808,7 @@ Transform:
   m_GameObject: {fileID: 196104460}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 72, y: 3, z: 0}
+  m_LocalPosition: {x: 46, y: 2.1, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -1843,6 +1843,8 @@ MonoBehaviour:
   directAttachProbeRadius: 0.25
   hookSpawnForwardOffset: 0.75
   minAttachSurfaceUpDot: 0.92
+  minAttachDistanceFromPlayer: 3
+  standingSurfaceCheckDistance: 2.2
 --- !u!114 &196104464
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1860,6 +1862,7 @@ MonoBehaviour:
   lethalImpactSpeed: 30
   maxImpactDamage: 80
   damageCooldown: 0.35
+  glancingImpactContribution: 0.35
 --- !u!114 &196104465
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1875,7 +1878,7 @@ MonoBehaviour:
   damageController: {fileID: 0}
   safeFallSpeed: 18
   lethalFallSpeed: 45
-  maxFallDamage: 60
+  maxFallDamage: 12
   groundMask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -1950,21 +1953,28 @@ MonoBehaviour:
   ropeLine: {fileID: 196104470}
   maxRopeLength: 35
   minRopeLength: 2
+  attachSlack: 0.45
+  attachInputGraceTime: 0.18
+  attachConstraintGraceFrames: 2
   ropeClimbSpeed: 6
-  swingForce: 12
+  swingForce: 34
   ropeConstraintStrength: 0
   ropeDamping: 0
   hardConstraint: 1
-  maxSwingEffort: 2.2
-  swingEffortDrain: 2.4
-  swingEffortRecharge: 0.45
-  exhaustedSwingMultiplier: 0.08
+  maxSwingEffort: 5.5
+  swingEffortDrain: 0.75
+  swingEffortRecharge: 1.6
+  exhaustedSwingMultiplier: 0.4
   tangentialAirResistance: 0.012
   inwardVelocityPreservation: 0.85
-  initialSwingKickForce: 1.25
-  steeringBrakeForce: 2.5
-  maxPoweredAngleFromDown: 55
-  upwardSwingForceMultiplier: 0.02
+  initialSwingKickForce: 4.5
+  steeringBrakeForce: 5
+  maxPoweredAngleFromDown: 68
+  upwardSwingForceMultiplier: 0.05
+  hardSwingAngleFromDown: 76
+  highAngleBrakeForce: 42
+  highAngleVelocityDamping: 0.8
+  maxTangentialSpeedAtAngleLimit: 8
   ropeGravityMultiplier: 2.2
   ropeCollisionMask:
     serializedVersion: 2
@@ -2245,11 +2255,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 00c016fdf961652439a32587754d5a9c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerLightController
-  lightRange: 130
-  centerIntensity: 1.8
-  edgeIntensity: 1.15
-  centerBrightRadius: 70
-  edgeRadius: 160
+  lightRange: 2800
+  centerIntensity: 16
+  edgeIntensity: 11
+  centerBrightRadius: 80
+  edgeRadius: 190
   lightColor: {r: 0.82, g: 0.9, b: 1, a: 1}
 --- !u!108 &196104478
 Light:
@@ -2262,8 +2272,8 @@ Light:
   serializedVersion: 13
   m_Type: 2
   m_Color: {r: 0.82, g: 0.9, b: 1, a: 1}
-  m_Intensity: 1.8
-  m_Range: 130
+  m_Intensity: 16
+  m_Range: 2800
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
   m_CookieSize2D: {x: 0.5, y: 0.5}
@@ -3954,7 +3964,7 @@ Light:
   serializedVersion: 13
   m_Type: 1
   m_Color: {r: 0.74, g: 0.82, b: 1, a: 1}
-  m_Intensity: 0.45
+  m_Intensity: 0.25
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
@@ -9017,14 +9027,18 @@ MonoBehaviour:
   grapplePointPrefab: {fileID: 0}
   seed: 12345
   useRandomSeed: 1
-  gameAreaDiameterInChunks: 4
-  gameAreaBoundaryMargin: 16
+  gameAreaDiameterInChunks: 2
+  gameAreaBoundaryMargin: 8
+  wallEmbedDepth: 8
+  wallEmbeddedObstacleChance: 0.45
   maxReachableDistance: 28
   verticalStepMin: 5
   verticalStepMax: 14
-  centerClearRadius: 42
-  centerSparseRadius: 62
+  centerClearRadius: 24
+  centerSparseRadius: 38
   centerSpawnChance: 0.02
+  startPlatformPosition: {x: 46, y: 0, z: 0}
+  playerStartPosition: {x: 46, y: 2.1, z: 0}
   maxRandomPointAttempts: 16
   overlappingStructureChance: 0.35
   maxOverlappingStructures: 1
@@ -9032,6 +9046,7 @@ MonoBehaviour:
   overlappingStructureRadius: 13
   stoneMaterial: {fileID: 2100000, guid: d65f74524c04f5247ac94ec1c3bdf301, type: 2}
   grappleMaterial: {fileID: 2100000, guid: 2c840e944afe9244cb9857abc1573ee2, type: 2}
+  clearBakedChunksOnAwake: 1
 --- !u!4 &1112155727
 Transform:
   m_ObjectHideFlags: 0
@@ -9066,12 +9081,23 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::MegastructureBoundaryBuilder
   generator: {fileID: 1112155726}
   wallMaterial: {fileID: 2100000, guid: e3a196a694652f74fb8ea3fd2120769b, type: 2}
-  diameterInChunks: 4
+  diameterInChunks: 2
   wallSegments: 32
   chunkHeight: 40
   heightInChunks: 12
   wallThickness: 4
   wallTopY: 20
+  wallBaseColor: {r: 0.09, g: 0.1, b: 0.11, a: 1}
+  wallEmissionColor: {r: 0.025, g: 0.03, b: 0.035, a: 1}
+  wallEmissionIntensity: 0.25
+  wallPanelVariation: 0.18
+  wallsReceiveShadows: 1
+  wallsCastShadows: 1
+  buildWallFillLights: 1
+  wallFillLightCount: 5
+  wallFillLightIntensity: 0.55
+  wallFillLightRangeMultiplier: 1.7
+  wallFillLightColor: {r: 0.48, g: 0.55, b: 0.62, a: 1}
   buildOnStart: 1
 --- !u!1 &1125638610
 GameObject:
@@ -12169,7 +12195,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CentipedeMonsterController
   player: {fileID: 196104462}
-  moveSpeed: 5
+  moveSpeed: 1.65
   turnSpeed: 8
   groundRayDistance: 8
   groundMask:
@@ -12177,7 +12203,7 @@ MonoBehaviour:
     m_Bits: 4294967295
   walkableDistance: 8
   attackRange: 2.5
-  monsterAggressionByDepth: 0.01
+  monsterAggressionByDepth: 0.002
   pathfinder: {fileID: 1411083497}
   jumpController: {fileID: 1411083496}
   bodyController: {fileID: 1411083495}
@@ -12206,7 +12232,9 @@ MonoBehaviour:
   - {fileID: 880557690}
   - {fileID: 1656508718}
   segmentCount: 10
-  segmentSpacing: 1.2
+  segmentSpacing: 2.4
+  headDiameter: 3.4
+  segmentDiameter: 3
   followSpeed: 8
   bodySmoothing: 0.15
   bodyMaterial: {fileID: 2100000, guid: 4d2b80aeb3e4b84409806073d33a468a, type: 2}
@@ -12224,8 +12252,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::MonsterJumpController
   jumpForce: 16
   jumpUpwardForce: 8
-  maxJumpDistance: 25
-  jumpCooldown: 2
+  maxJumpDistance: 30
+  jumpCooldown: 4
 --- !u!114 &1411083497
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -12276,7 +12304,7 @@ Transform:
   m_GameObject: {fileID: 1411083493}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 154, y: 8, z: 10}
+  m_LocalPosition: {x: 76, y: 8, z: 10}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:

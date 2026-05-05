@@ -15,6 +15,8 @@ public class GrapplingHookController : MonoBehaviour
     [SerializeField] float directAttachProbeRadius = 0.35f;
     [SerializeField] float hookSpawnForwardOffset = 0.75f;
     [SerializeField, Range(0f, 1f)] float minAttachSurfaceUpDot = 0.92f;
+    [SerializeField] float minAttachDistanceFromPlayer = 3f;
+    [SerializeField] float standingSurfaceCheckDistance = 2.2f;
 
     HookProjectile activeHook;
     Vector3 fireOrigin;
@@ -25,6 +27,7 @@ public class GrapplingHookController : MonoBehaviour
     void Awake()
     {
         State = GrappleState.Idle;
+        useInstantAttachProbe = false;
         if (cameraTransform == null && Camera.main != null) cameraTransform = Camera.main.transform;
     }
 
@@ -102,6 +105,7 @@ public class GrapplingHookController : MonoBehaviour
         {
             if (hits[i].collider == null || hits[i].collider.GetComponentInParent<GrapplingHookController>() == this) continue;
             if (!IsAttachSurfaceAllowed(hits[i].normal)) continue;
+            if (!IsAttachTargetAllowed(hits[i].collider, hits[i].point)) continue;
             if (hits[i].collider.GetComponentInParent<GrapplePoint>() != null || hits[i].collider.gameObject.layer != gameObject.layer)
             {
                 attachHit = hits[i];
@@ -122,6 +126,25 @@ public class GrapplingHookController : MonoBehaviour
     public bool IsAttachSurfaceAllowed(Vector3 surfaceNormal)
     {
         return Vector3.Dot(surfaceNormal.normalized, Vector3.up) >= minAttachSurfaceUpDot;
+    }
+
+    public bool IsAttachTargetAllowed(Collider targetCollider, Vector3 attachPosition)
+    {
+        if (Vector3.Distance(transform.position, attachPosition) < minAttachDistanceFromPlayer) return false;
+        if (targetCollider == null) return true;
+
+        Vector3 start = transform.position + Vector3.up * 0.15f;
+        RaycastHit[] hits = Physics.RaycastAll(start, Vector3.down, standingSurfaceCheckDistance, ~0, QueryTriggerInteraction.Ignore);
+        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+        for (int i = 0; i < hits.Length; i++)
+        {
+            if (hits[i].collider == null) continue;
+            if (hits[i].collider.transform.IsChildOf(transform)) continue;
+            if (hits[i].collider == targetCollider) return false;
+            return hits[i].collider.transform.root != targetCollider.transform.root;
+        }
+
+        return true;
     }
 
     public void CancelGrapple()

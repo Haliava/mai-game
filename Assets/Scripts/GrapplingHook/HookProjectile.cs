@@ -48,12 +48,13 @@ public class HookProjectile : MonoBehaviour
         GrapplePoint point = collision.collider.GetComponentInParent<GrapplePoint>();
         bool layerAllowed = ((1 << collision.gameObject.layer) & grappleMask.value) != 0;
         bool canAttachHere = owner != null && owner.IsAttachSurfaceAllowed(contact.normal);
-        if ((point != null || layerAllowed) && canAttachHere)
+        Vector3 attachPosition = point != null ? point.AttachTransform.position : contact.point;
+        bool targetAllowed = owner != null && owner.IsAttachTargetAllowed(collision.collider, attachPosition);
+        if ((point != null || layerAllowed) && canAttachHere && targetAllowed)
         {
             armed = false;
             rb.linearVelocity = Vector3.zero;
             rb.isKinematic = true;
-            Vector3 attachPosition = point != null ? point.AttachTransform.position : contact.point;
             transform.position = attachPosition;
             owner.AttachAt(attachPosition, point);
         }

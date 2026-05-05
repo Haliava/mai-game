@@ -6,7 +6,7 @@ public class FallDamageDetector : MonoBehaviour
     [SerializeField] PlayerDamageController damageController;
     [SerializeField] float safeFallSpeed = 18f;
     [SerializeField] float lethalFallSpeed = 45f;
-    [SerializeField] float maxFallDamage = 60f;
+    [SerializeField] float maxFallDamage = 12f;
     [SerializeField] LayerMask groundMask = ~0;
 
     Rigidbody rb;

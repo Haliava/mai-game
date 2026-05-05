@@ -2,7 +2,7 @@ using UnityEngine;
 
 public class PrototypeSceneBootstrapper : MonoBehaviour
 {
-    static readonly Vector3 SideStartPosition = new Vector3(72f, 3f, 0f);
+    static readonly Vector3 SideStartPosition = new Vector3(46f, 2.1f, 0f);
 
     [SerializeField] bool buildOnStart = true;
     [SerializeField] Material stoneMaterial;
@@ -37,6 +37,7 @@ public class PrototypeSceneBootstrapper : MonoBehaviour
         GameObject monster = GameObject.Find("CentipedeMonster");
         if (monster == null) monster = CreateMonster(player.transform);
         EnsureMonsterStartsOnWall(monster);
+        EnsureMonsterVisibleAndBuilt(monster);
 
         if (FindAnyObjectByType<PrototypeGameManager>() == null)
         {
@@ -105,8 +106,8 @@ public class PrototypeSceneBootstrapper : MonoBehaviour
         player.AddComponent<PlayerHealthHud>();
         Light playerLight = player.AddComponent<Light>();
         playerLight.type = LightType.Point;
-        playerLight.range = 130f;
-        playerLight.intensity = 1.8f;
+        playerLight.range = 2800f;
+        playerLight.intensity = 16f;
         playerLight.color = new Color(0.82f, 0.9f, 1f);
         playerLight.shadows = LightShadows.None;
         player.AddComponent<PlayerLightController>();
@@ -164,39 +165,41 @@ public class PrototypeSceneBootstrapper : MonoBehaviour
         rb.freezeRotation = true;
         rb.useGravity = false;
         rb.interpolation = RigidbodyInterpolation.Interpolate;
-        MonsterPathfinder pathfinder = monster.AddComponent<MonsterPathfinder>();
-        MonsterJumpController jump = monster.AddComponent<MonsterJumpController>();
-        CentipedeBodyController body = monster.AddComponent<CentipedeBodyController>();
+        SurfaceNavigationGraph graph = monster.AddComponent<SurfaceNavigationGraph>();
+        CentipedePathfinder pathfinder = monster.AddComponent<CentipedePathfinder>();
+        JumpPlanner jumpPlanner = monster.AddComponent<JumpPlanner>();
+        JumpExecutor jumpExecutor = monster.AddComponent<JumpExecutor>();
+        CentipedeBody body = monster.AddComponent<CentipedeBody>();
         SetPrivate(body, "bodyMaterial", monsterMaterial);
+        SetPrivate(body, "legMaterial", monsterMaterial);
         body.CreateBody();
-        CentipedeMonsterController controller = monster.AddComponent<CentipedeMonsterController>();
-        SetPrivate(controller, "player", player);
-        SetPrivate(controller, "pathfinder", pathfinder);
-        SetPrivate(controller, "jumpController", jump);
-        SetPrivate(controller, "bodyController", body);
+        CentipedeBrain brain = monster.AddComponent<CentipedeBrain>();
+        SetPrivate(brain, "player", player);
+        SetPrivate(brain, "body", body);
+        SetPrivate(brain, "graph", graph);
+        SetPrivate(brain, "pathfinder", pathfinder);
+        SetPrivate(brain, "jumpPlanner", jumpPlanner);
+        SetPrivate(brain, "jumpExecutor", jumpExecutor);
 
         GameObject attack = new GameObject("AttackZone");
         attack.transform.SetParent(monster.transform, false);
         SphereCollider trigger = attack.AddComponent<SphereCollider>();
         trigger.isTrigger = true;
         trigger.radius = 2.5f;
-        attack.AddComponent<DamageSource>();
+        attack.AddComponent<MonsterDamageSource>();
         return monster;
     }
 
     Vector3 GetMonsterWallStartPosition()
     {
-        return new Vector3(154f, 8f, 10f);
+        return new Vector3(76f, 8f, 10f);
     }
 
     void EnsureMonsterStartsOnWall(GameObject monster)
     {
         if (monster == null) return;
         Vector2 planar = new Vector2(monster.transform.position.x, monster.transform.position.z);
-        if (planar.magnitude < 80f)
-        {
-            monster.transform.position = GetMonsterWallStartPosition();
-        }
+        monster.transform.position = GetMonsterWallStartPosition();
 
         Vector3 radial = new Vector3(monster.transform.position.x, 0f, monster.transform.position.z);
         if (radial.sqrMagnitude > 0.01f)
@@ -213,6 +216,64 @@ public class PrototypeSceneBootstrapper : MonoBehaviour
         }
     }
 
+    void EnsureMonsterVisibleAndBuilt(GameObject monster)
+    {
+        if (monster == null) return;
+
+        CentipedeMonsterController oldController = monster.GetComponent<CentipedeMonsterController>();
+        if (oldController != null) oldController.enabled = false;
+        MonsterPathfinder oldPathfinder = monster.GetComponent<MonsterPathfinder>();
+        if (oldPathfinder != null) oldPathfinder.enabled = false;
+        MonsterJumpController oldJump = monster.GetComponent<MonsterJumpController>();
+        if (oldJump != null) oldJump.enabled = false;
+        CentipedeBodyController oldBody = monster.GetComponent<CentipedeBodyController>();
+        if (oldBody != null) oldBody.enabled = false;
+
+        SurfaceNavigationGraph graph = monster.GetComponent<SurfaceNavigationGraph>();
+        if (graph == null) graph = monster.AddComponent<SurfaceNavigationGraph>();
+        CentipedePathfinder pathfinder = monster.GetComponent<CentipedePathfinder>();
+        if (pathfinder == null) pathfinder = monster.AddComponent<CentipedePathfinder>();
+        JumpPlanner jumpPlanner = monster.GetComponent<JumpPlanner>();
+        if (jumpPlanner == null) jumpPlanner = monster.AddComponent<JumpPlanner>();
+        JumpExecutor jumpExecutor = monster.GetComponent<JumpExecutor>();
+        if (jumpExecutor == null) jumpExecutor = monster.AddComponent<JumpExecutor>();
+        CentipedeBody body = monster.GetComponent<CentipedeBody>();
+        if (body == null) body = monster.AddComponent<CentipedeBody>();
+        SetPrivate(body, "bodyMaterial", monsterMaterial);
+        SetPrivate(body, "legMaterial", monsterMaterial);
+        body.CreateBody();
+        CentipedeBrain brain = monster.GetComponent<CentipedeBrain>();
+        if (brain == null) brain = monster.AddComponent<CentipedeBrain>();
+        PlayerDamageController player = FindAnyObjectByType<PlayerDamageController>();
+        if (player != null) SetPrivate(brain, "player", player.transform);
+        SetPrivate(brain, "body", body);
+        SetPrivate(brain, "graph", graph);
+        SetPrivate(brain, "pathfinder", pathfinder);
+        SetPrivate(brain, "jumpPlanner", jumpPlanner);
+        SetPrivate(brain, "jumpExecutor", jumpExecutor);
+
+        Transform attack = monster.transform.Find("AttackZone");
+        if (attack == null)
+        {
+            GameObject attackObject = new GameObject("AttackZone");
+            attackObject.transform.SetParent(monster.transform, false);
+            attack = attackObject.transform;
+        }
+        SphereCollider trigger = attack.GetComponent<SphereCollider>();
+        if (trigger == null) trigger = attack.gameObject.AddComponent<SphereCollider>();
+        trigger.isTrigger = true;
+        trigger.radius = 2.5f;
+        DamageSource legacyDamage = attack.GetComponent<DamageSource>();
+        if (legacyDamage != null) legacyDamage.enabled = false;
+        if (attack.GetComponent<MonsterDamageSource>() == null) attack.gameObject.AddComponent<MonsterDamageSource>();
+
+        Renderer[] renderers = monster.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            renderers[i].enabled = true;
+        }
+    }
+
     void SetPrivate(object target, string fieldName, object value)
     {
         System.Reflection.FieldInfo field = target.GetType().GetField(fieldName, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
@@ -224,8 +285,8 @@ public class PrototypeSceneBootstrapper : MonoBehaviour
         Light playerLight = player.GetComponent<Light>();
         if (playerLight == null) playerLight = player.AddComponent<Light>();
         playerLight.type = LightType.Point;
-        playerLight.range = 130f;
-        playerLight.intensity = 1.8f;
+        playerLight.range = 2800f;
+        playerLight.intensity = 16f;
         playerLight.color = new Color(0.82f, 0.9f, 1f);
         playerLight.shadows = LightShadows.None;
         if (player.GetComponent<PlayerLightController>() == null) player.AddComponent<PlayerLightController>();
@@ -245,14 +306,14 @@ public class PrototypeSceneBootstrapper : MonoBehaviour
         RenderSettings.fog = false;
         RenderSettings.fogDensity = 0f;
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-        RenderSettings.ambientLight = new Color(0.075f, 0.082f, 0.09f);
-        RenderSettings.reflectionIntensity = 0.18f;
+        RenderSettings.ambientLight = new Color(0.16f, 0.18f, 0.2f);
+        RenderSettings.reflectionIntensity = 0.28f;
 
         Light[] lights = FindObjectsByType<Light>();
         for (int i = 0; i < lights.Length; i++)
         {
             if (lights[i].type != LightType.Directional) continue;
-            lights[i].intensity = 0.45f;
+            lights[i].intensity = 0.25f;
             lights[i].color = new Color(0.74f, 0.82f, 1f);
             lights[i].shadows = LightShadows.Soft;
         }
@@ -261,7 +322,8 @@ public class PrototypeSceneBootstrapper : MonoBehaviour
     void EnsurePlayerStartsNearSidePlatform(GameObject player)
     {
         Vector2 planar = new Vector2(player.transform.position.x, player.transform.position.z);
-        if (planar.magnitude > 20f) return;
+        if (Vector3.Distance(player.transform.position, SideStartPosition) < 4f) return;
+        if (planar.magnitude > 20f && planar.magnitude < 58f) return;
 
         player.transform.position = SideStartPosition;
         Rigidbody rb = player.GetComponent<Rigidbody>();
@@ -273,20 +335,26 @@ public class PrototypeSceneBootstrapper : MonoBehaviour
 
     void EnsureSideStartPlatform()
     {
-        if (GameObject.Find("StartPlatform") != null) return;
-
-        GameObject platform = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        platform.name = "StartPlatform";
+        GameObject platform = GameObject.Find("StartPlatform");
+        if (platform == null)
+        {
+            platform = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            platform.name = "StartPlatform";
+        }
         platform.transform.position = new Vector3(SideStartPosition.x, 0f, SideStartPosition.z);
-        platform.transform.localScale = new Vector3(18f, 2f, 18f);
+        platform.transform.localScale = new Vector3(16f, 2f, 16f);
 
         Renderer renderer = platform.GetComponent<Renderer>();
         if (renderer != null && stoneMaterial != null) renderer.sharedMaterial = stoneMaterial;
 
-        GameObject point = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        point.name = "StartGrapplePoint";
+        GameObject point = GameObject.Find("StartGrapplePoint");
+        if (point == null)
+        {
+            point = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            point.name = "StartGrapplePoint";
+        }
         point.transform.SetParent(platform.transform, true);
-        point.transform.position = new Vector3(SideStartPosition.x + 7f, 3.2f, SideStartPosition.z + 3f);
+        point.transform.position = new Vector3(SideStartPosition.x + 6f, 3.2f, SideStartPosition.z + 3f);
         point.transform.localScale = Vector3.one * 0.65f;
         if (point.GetComponent<GrapplePoint>() == null) point.AddComponent<GrapplePoint>();
 

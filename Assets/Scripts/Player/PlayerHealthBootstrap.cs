@@ -22,5 +22,12 @@ public sealed class PlayerHealthBootstrap : MonoBehaviour
 
         var ui = PlayerHealthUI.EnsureInScene();
         if (ui != null) ui.RegisterHealth(ph);
+
+        // Ensure EndlessDescentGameManager is present for endless runs
+        if (EndlessDescentGameManager.Instance == null)
+        {
+            GameObject gm = new GameObject("EndlessDescentManager");
+            gm.AddComponent<EndlessDescentGameManager>();
+        }
     }
 }

@@ -248,6 +248,20 @@ public sealed class FPSCharacterController3D : MonoBehaviour
         }
     }
 
+    private void OnControllerColliderHit(ControllerColliderHit hit)
+    {
+        if (hit == null || hit.collider == null) return;
+        var trigger = hit.collider.GetComponent<DescentSphereTrigger>() ?? hit.collider.GetComponentInParent<DescentSphereTrigger>();
+        if (trigger != null)
+        {
+            Debug.Log($"FPSCharacterController3D: OnControllerColliderHit with {hit.collider.name}, invoking EndlessDescent.");
+            if (EndlessDescentGameManager.Instance != null)
+            {
+                EndlessDescentGameManager.Instance.CompleteCurrentLevel(trigger);
+            }
+        }
+    }
+
     private void HandleCursorLock()
     {
         if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)

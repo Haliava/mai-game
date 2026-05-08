@@ -75,8 +75,9 @@ public static class FinalPedestalArena
             sphereCollider.isTrigger = true;
         }
         AssignMaterial(sphere, settings.VictoryMaterial != null ? settings.VictoryMaterial : CreateEmissiveMaterial(settings.VictorySphereColor));
-        VictorySphereInteractable interactable = sphere.AddComponent<VictorySphereInteractable>();
-        interactable.Configure(settings.InteractKey, null);
+        // replace legacy victory popup with descent trigger for endless mode
+        sphere.AddComponent<DescentSphereTrigger>();
+        // defaults: require touch from below, deactivate after trigger
 
         Light light = sphere.AddComponent<Light>();
         light.type = LightType.Point;

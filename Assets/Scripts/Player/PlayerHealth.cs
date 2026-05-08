@@ -76,12 +76,26 @@ public sealed class PlayerHealth : MonoBehaviour
     {
         if (showDebugLogs) Debug.Log("[PlayerHealth] Player died");
         OnDeath?.Invoke();
+        var manager = EndlessDescentGameManager.Instance;
+        if (manager != null && manager.IsEndlessMode)
+        {
+            if (showDebugLogs) Debug.Log("[PlayerHealth] Delegating death handling to EndlessDescentGameManager");
+            manager.OnPlayerDeath(this);
+            return;
+        }
+
         StartCoroutine(DoDeathBehavior());
+    }
+
+    public void FullHeal()
+    {
+        currentHealth = maxHealth;
+        OnHealthChanged?.Invoke(currentHealth);
+        if (showDebugLogs) Debug.Log("[PlayerHealth] Full heal");
     }
 
     private System.Collections.IEnumerator DoDeathBehavior()
     {
-        // disable player control where possible
         var fps = FindAnyObjectByType<FPSCharacterController3D>();
         if (fps != null)
         {

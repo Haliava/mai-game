@@ -4,156 +4,170 @@ using UnityEngine;
 [RequireComponent(typeof(LineRenderer))]
 public class RopeController : MonoBehaviour
 {
+    [Header("References")]
     [SerializeField] Transform player;
     [SerializeField] Rigidbody playerRb;
     [SerializeField] Transform ropeOrigin;
-    [SerializeField] Transform cameraTransform;
     [SerializeField] LineRenderer ropeLine;
+    [SerializeField] RopeCollisionTracker collisionTracker;
+
+    [Header("Rope")]
+    [SerializeField] float visualRopeWidth = 0.018f;
     [SerializeField] float maxRopeLength = 35f;
     [SerializeField] float minRopeLength = 2f;
-    [SerializeField] float attachSlack = 0.45f;
-    [SerializeField] float attachInputGraceTime = 0.18f;
-    [SerializeField] int attachConstraintGraceFrames = 2;
     [SerializeField] float ropeClimbSpeed = 6f;
-    [SerializeField] float swingForce = 34f;
-    [SerializeField] float ropeConstraintStrength = 80f;
-    [SerializeField] float ropeDamping = 4f;
-    [SerializeField] bool hardConstraint = true;
-    [SerializeField] float maxSwingEffort = 5.5f;
-    [SerializeField] float swingEffortDrain = 0.75f;
-    [SerializeField] float swingEffortRecharge = 1.6f;
-    [SerializeField] float exhaustedSwingMultiplier = 0.4f;
-    [SerializeField] float tangentialAirResistance = 0.012f;
-    [SerializeField] float inwardVelocityPreservation = 0.85f;
-    [SerializeField] float initialSwingKickForce = 4.5f;
-    [SerializeField] float steeringBrakeForce = 5f;
-    [SerializeField] float swingInputResponse = 5f;
-    [SerializeField] float maxPoweredAngleFromDown = 68f;
-    [SerializeField] float upwardSwingForceMultiplier = 0.05f;
-    [SerializeField] float hardSwingAngleFromDown = 76f;
-    [SerializeField] float highAngleBrakeForce = 42f;
-    [SerializeField] float highAngleVelocityDamping = 0.8f;
-    [SerializeField] float maxTangentialSpeedAtAngleLimit = 8f;
-    [SerializeField] float ropeGravityMultiplier = 1.8f;
+    [SerializeField] float lengthChangeInterval = 0.085f;
+    [SerializeField] float attachedVelocityDamping = 0.12f;
     [SerializeField] LayerMask ropeCollisionMask = ~0;
-    [SerializeField] float wrapPointOffset = 0.2f;
-    [SerializeField] float minFiringWrapDistance = 2.5f;
-    [SerializeField] float minHookDistancePastWrap = 0.75f;
-    [SerializeField] bool allowFiringWrapWhileGrounded = false;
-    [SerializeField] float groundedWrapIgnoreDistance = 2.2f;
-    [Header("Flying Rope Physics")]
-    [SerializeField] bool applyFlyingRopeTension = true;
-    [SerializeField] float flyingHookVelocityDamping = 0.92f;
-    [SerializeField] float flyingPlayerPullStrength = 0.08f;
-    [Header("Ledge Assist")]
-    [SerializeField] bool ledgeAssistEnabled = true;
-    [SerializeField] float ledgeAssistRopeLength = 6f;
-    [SerializeField] float ledgeAssistMaxAnchorHeight = 6f;
-    [SerializeField] float ledgeAssistMinAnchorHeight = 0.45f;
-    [SerializeField] float ledgeAssistInwardOffset = 1.7f;
-    [SerializeField] float ledgeAssistSurfaceProbeHeight = 2.2f;
-    [SerializeField] float ledgeAssistSurfaceProbeDistance = 5f;
-    [SerializeField] float ledgeAssistMoveSpeed = 11f;
-    [SerializeField] float ledgeAssistSnapDistance = 0.45f;
-    [SerializeField] float ledgeAssistEdgeSearchDistance = 4f;
-    [SerializeField] float ledgeAssistSideClearance = 0.55f;
-    [SerializeField] float ledgeAssistStageTolerance = 0.18f;
 
-    readonly List<Vector3> wrapPoints = new List<Vector3>();
+    [Header("Physical Chain")]
+    [SerializeField] RopeSegment ropeSegmentPrefab;
+    [SerializeField] Material ropeSegmentMaterial;
+    [SerializeField] float physicalSegmentLength = 0.4f;
+    [SerializeField] float physicalSegmentRadius = 0.085f;
+    [SerializeField] int maxPhysicalSegments = 90;
+    [SerializeField] bool showPhysicalSegmentRenderers = false;
+    [SerializeField] bool disablePlayerRopeCollision = true;
+    [SerializeField] bool disableHookRopeCollision = true;
+    [SerializeField] bool disableRopeSelfCollision = true;
+    [SerializeField] bool drawContactGizmos = true;
+
+    readonly List<RopeSegment> segments = new List<RopeSegment>();
+
     Transform flyingHook;
     Rigidbody flyingHookRb;
-    Transform dynamicAnchor;
+    Collider ropeEndCollider;
+    Transform physicalRoot;
+    Rigidbody startAnchorRb;
+    Rigidbody endAnchorRb;
+    ConfigurableJoint startJoint;
+    ConfigurableJoint endJoint;
     Vector3 anchorPoint;
-    Vector2 smoothedSwingInput;
-    float currentRopeLength;
-    float currentSwingEffort;
-    float attachTime;
-    int constraintGraceFramesRemaining;
-    bool isMantlingLedge;
-    int mantleStage;
-    Vector3 mantleSideLow;
-    Vector3 mantleSideHigh;
-    Vector3 mantleTop;
-    bool isAttached;
-    bool isFiring;
+    GrappleEdgeCandidate attachedEdge;
     Collider playerCollider;
-    bool playerColliderWasEnabled;
-    bool mantleCollisionSuppressed;
+
+    bool isFiring;
+    bool isAttached;
+    float targetRopeLength;
+    float currentRopeLength;
+    float currentTension;
+    float nextLengthChangeTime;
 
     public bool IsAttached { get { return isAttached; } }
     public float CurrentRopeLength { get { return currentRopeLength; } }
-    public float CurrentSwingEffort { get { return currentSwingEffort; } }
+    public float TargetRopeLength { get { return targetRopeLength; } }
+    public float CurrentTension { get { return currentTension; } }
+    public float CurrentSwingEffort { get { return 0f; } }
+    public Vector3 ActiveAnchor { get { return isAttached || isFiring ? GetEndPosition() : Vector3.zero; } }
+    public int WrapCount { get { return 0; } }
+    public int PhysicalSegmentCount { get { return segments.Count; } }
+    public RopeCollisionTracker CollisionTracker { get { return collisionTracker; } }
 
     void Awake()
     {
         if (ropeLine == null) ropeLine = GetComponent<LineRenderer>();
         if (playerRb == null && player != null) playerRb = player.GetComponent<Rigidbody>();
-        if (player != null) playerCollider = player.GetComponent<Collider>();
-        if (cameraTransform == null && Camera.main != null) cameraTransform = Camera.main.transform;
+        if (playerCollider == null && player != null) playerCollider = player.GetComponent<Collider>();
+        if (collisionTracker == null) collisionTracker = GetComponent<RopeCollisionTracker>();
+        if (collisionTracker == null) collisionTracker = gameObject.AddComponent<RopeCollisionTracker>();
+
         ropeLine.positionCount = 0;
-        ropeLine.widthMultiplier = 0.04f;
-        currentSwingEffort = maxSwingEffort;
+        ropeLine.widthMultiplier = visualRopeWidth;
+        targetRopeLength = minRopeLength;
+        currentRopeLength = 0f;
+        ropeCollisionMask = BuildWorldGeometryMask();
     }
 
     void Update()
     {
-        if (isAttached) UpdateClimbInput();
+        if (isAttached) UpdateLengthInput();
         UpdateLine();
     }
 
     void FixedUpdate()
     {
+        if (!isFiring && !isAttached)
+        {
+            currentTension = 0f;
+            PushTensionToTracker();
+            return;
+        }
+
+        UpdateEndpointAnchors();
+        UpdateEndpointJointAnchors();
+
         if (isFiring)
         {
-            ApplyFlyingRopePhysics();
-            return;
+            ExtendFlyingChainToHook();
         }
-
-        if (!isAttached || playerRb == null) return;
-
-        UpdateWrapping();
-        if (constraintGraceFramesRemaining > 0)
+        else
         {
-            constraintGraceFramesRemaining--;
-            return;
+            ApplyLengthChanges();
+            ApplyAttachedDamping();
         }
-        if (ApplyLedgeAssist()) return;
-        ApplyRopeGravity();
-        ApplySwingForces();
-        ApplyHighAngleSwingLimit();
-        ApplyConstraint();
-        ClampSwingAngle();
+
+        IgnoreOwnerCollisions();
+        SampleSegmentContacts();
+        UpdateCurrentLengthAndTension();
+        PushTensionToTracker();
     }
 
     public void BeginFiring(Transform hook, float ropeLength)
     {
+        ResetPhysicalRope();
+
         flyingHook = hook;
         flyingHookRb = hook != null ? hook.GetComponent<Rigidbody>() : null;
-        dynamicAnchor = null;
-        maxRopeLength = ropeLength;
+        ropeEndCollider = hook != null ? hook.GetComponent<Collider>() : null;
+        maxRopeLength = Mathf.Max(minRopeLength, ropeLength);
+        targetRopeLength = physicalSegmentLength;
+        currentRopeLength = 0f;
+        currentTension = 0f;
         isFiring = true;
         isAttached = false;
-        wrapPoints.Clear();
+        attachedEdge = default(GrappleEdgeCandidate);
+        if (collisionTracker != null) collisionTracker.Clear();
+
+        Vector3 start = GetOrigin();
+        Vector3 end = GetEndPosition();
+        CreateChain(start, end, Mathf.Max(physicalSegmentLength, Vector3.Distance(start, end)));
     }
 
     public void Attach(Vector3 point, float ropeLength, LayerMask collisionMask)
     {
+        Attach(point, ropeLength, collisionMask, default(GrappleEdgeCandidate));
+    }
+
+    public void Attach(Vector3 point, float ropeLength, LayerMask collisionMask, GrappleEdgeCandidate edgeCandidate)
+    {
         anchorPoint = point;
-        dynamicAnchor = null;
+        attachedEdge = edgeCandidate;
         ropeCollisionMask = collisionMask;
-        maxRopeLength = ropeLength;
-        currentRopeLength = Mathf.Clamp(Vector3.Distance(GetOrigin(), anchorPoint) + attachSlack, minRopeLength, maxRopeLength);
-        currentSwingEffort = maxSwingEffort;
-        attachTime = Time.time;
-        constraintGraceFramesRemaining = attachConstraintGraceFrames;
+        maxRopeLength = Mathf.Max(minRopeLength, ropeLength);
+        targetRopeLength = Mathf.Clamp(Vector3.Distance(GetOrigin(), point) + physicalSegmentLength, minRopeLength, maxRopeLength);
+        currentRopeLength = Mathf.Max(currentRopeLength, targetRopeLength);
         isAttached = true;
         isFiring = false;
         flyingHook = null;
         flyingHookRb = null;
-        smoothedSwingInput = Vector2.zero;
-        isMantlingLedge = false;
-        SetMantleCollision(true);
-        wrapPoints.Clear();
+        ropeEndCollider = null;
+        nextLengthChangeTime = Time.time;
+
+        EnsureRootAndAnchors();
+        UpdateEndpointAnchors();
+        if (segments.Count == 0)
+        {
+            CreateChain(GetOrigin(), GetEndPosition(), targetRopeLength);
+        }
+
+        int desiredCount = DesiredSegmentCount(targetRopeLength);
+        while (segments.Count < desiredCount)
+        {
+            InsertSegmentAtStart();
+        }
+
+        RebuildAllJoints();
+        IgnoreOwnerCollisions();
     }
 
     public void Detach()
@@ -162,521 +176,478 @@ public class RopeController : MonoBehaviour
         isFiring = false;
         flyingHook = null;
         flyingHookRb = null;
-        dynamicAnchor = null;
-        smoothedSwingInput = Vector2.zero;
-        isMantlingLedge = false;
-        SetMantleCollision(true);
-        wrapPoints.Clear();
+        ropeEndCollider = null;
+        attachedEdge = default(GrappleEdgeCandidate);
+        targetRopeLength = minRopeLength;
+        currentRopeLength = 0f;
+        currentTension = 0f;
+
+        if (collisionTracker != null) collisionTracker.Clear();
+        ResetPhysicalRope();
         if (ropeLine != null) ropeLine.positionCount = 0;
+    }
+
+    public bool TryAttachToFiringWrap(LayerMask collisionMask)
+    {
+        ropeCollisionMask = collisionMask;
+        return false;
+    }
+
+    void UpdateLengthInput()
+    {
+        float delta = 0f;
+        if (PrototypeInput.ShiftHeld) delta -= ropeClimbSpeed * Time.deltaTime;
+        if (PrototypeInput.ControlHeld) delta += ropeClimbSpeed * Time.deltaTime;
+        if (Mathf.Abs(delta) <= 0.0001f) return;
+
+        targetRopeLength = Mathf.Clamp(targetRopeLength + delta, minRopeLength, maxRopeLength);
+    }
+
+    void ApplyLengthChanges()
+    {
+        if (Time.time < nextLengthChangeTime) return;
+
+        int desiredCount = DesiredSegmentCount(targetRopeLength);
+        if (desiredCount < segments.Count)
+        {
+            RemoveSegmentAtStart();
+            nextLengthChangeTime = Time.time + lengthChangeInterval;
+        }
+        else if (desiredCount > segments.Count)
+        {
+            InsertSegmentAtStart();
+            nextLengthChangeTime = Time.time + lengthChangeInterval;
+        }
+    }
+
+    void ExtendFlyingChainToHook()
+    {
+        if (flyingHook == null) return;
+
+        float distance = Vector3.Distance(GetOrigin(), GetEndPosition());
+        targetRopeLength = Mathf.Clamp(distance + physicalSegmentLength, physicalSegmentLength, maxRopeLength);
+        int desiredCount = DesiredSegmentCount(targetRopeLength);
+        while (segments.Count < desiredCount)
+        {
+            InsertSegmentAtStart();
+        }
+    }
+
+    void CreateChain(Vector3 start, Vector3 end, float length)
+    {
+        EnsureRootAndAnchors();
+        int count = DesiredSegmentCount(length);
+        count = Mathf.Max(1, count);
+
+        Vector3 direction = end - start;
+        if (direction.sqrMagnitude < 0.001f) direction = Vector3.forward;
+        direction.Normalize();
+
+        for (int i = 0; i < count; i++)
+        {
+            float t = (i + 0.5f) / count;
+            RopeSegment segment = CreateSegment(i, Vector3.Lerp(start, end, t), direction);
+            segments.Add(segment);
+        }
+
+        RebuildAllJoints();
+        IgnoreOwnerCollisions();
+        UpdateCurrentLengthAndTension();
+    }
+
+    RopeSegment CreateSegment(int index, Vector3 position, Vector3 direction)
+    {
+        EnsureRootAndAnchors();
+
+        RopeSegment segment;
+        if (ropeSegmentPrefab != null)
+        {
+            segment = Instantiate(ropeSegmentPrefab, physicalRoot);
+        }
+        else
+        {
+            GameObject segmentObject = new GameObject("RopeSegment_" + index.ToString("00"));
+            segmentObject.transform.SetParent(physicalRoot, true);
+            segment = segmentObject.AddComponent<RopeSegment>();
+        }
+
+        segment.name = "RopeSegment_" + index.ToString("00");
+        int ropeLayer = LayerMask.NameToLayer("Rope");
+        if (ropeLayer >= 0) segment.gameObject.layer = ropeLayer;
+
+        Vector3 safeDirection = direction.sqrMagnitude > 0.001f ? direction.normalized : Vector3.up;
+        segment.transform.position = position;
+        segment.transform.rotation = Quaternion.FromToRotation(Vector3.up, safeDirection);
+        segment.Configure(index, collisionTracker, physicalSegmentRadius, physicalSegmentLength);
+
+        Renderer renderer = segment.GetComponent<Renderer>();
+        if (renderer != null && ropeSegmentMaterial != null) renderer.sharedMaterial = ropeSegmentMaterial;
+        SetSegmentRendererVisible(segment, showPhysicalSegmentRenderers);
+        return segment;
+    }
+
+    void InsertSegmentAtStart()
+    {
+        if (segments.Count >= maxPhysicalSegments) return;
+
+        Vector3 start = GetOrigin();
+        Vector3 next = segments.Count > 0 ? segments[0].WorldStart : GetEndPosition();
+        Vector3 direction = next - start;
+        if (direction.sqrMagnitude < 0.001f) direction = GetEndPosition() - start;
+        if (direction.sqrMagnitude < 0.001f) direction = Vector3.forward;
+        direction.Normalize();
+
+        Vector3 position = start + direction * physicalSegmentLength * 0.5f;
+        RopeSegment segment = CreateSegment(0, position, direction);
+        segments.Insert(0, segment);
+        ReindexSegments();
+        RebuildAllJoints();
+        IgnoreOwnerCollisions();
+    }
+
+    void RemoveSegmentAtStart()
+    {
+        int minCount = DesiredSegmentCount(minRopeLength);
+        if (segments.Count <= minCount || segments.Count == 0) return;
+
+        RopeSegment removed = segments[0];
+        segments.RemoveAt(0);
+        DestroySegmentObject(removed);
+        ReindexSegments();
+        RebuildAllJoints();
+        IgnoreOwnerCollisions();
+    }
+
+    void ReindexSegments()
+    {
+        for (int i = 0; i < segments.Count; i++)
+        {
+            if (segments[i] == null) continue;
+            segments[i].name = "RopeSegment_" + i.ToString("00");
+            segments[i].SetIndex(i);
+        }
+    }
+
+    void RebuildAllJoints()
+    {
+        RemoveSegmentJoints();
+        if (segments.Count == 0) return;
+
+        UpdateEndpointAnchors();
+
+        Rigidbody startBody = isAttached && playerRb != null ? playerRb : startAnchorRb;
+        Vector3 startAnchor = isAttached && playerRb != null ? GetOrigin() : GetStartAnchorPosition();
+        startJoint = AddLockedJoint(segments[0].gameObject, startBody, segments[0].WorldStart, startAnchor);
+
+        for (int i = 1; i < segments.Count; i++)
+        {
+            AddLockedJoint(segments[i].gameObject, segments[i - 1].Rigidbody, segments[i].WorldStart, segments[i - 1].WorldEnd);
+        }
+
+        Rigidbody endBody = GetEndBody();
+        endJoint = AddLockedJoint(segments[segments.Count - 1].gameObject, endBody, segments[segments.Count - 1].WorldEnd, GetEndPosition());
+    }
+
+    void UpdateEndpointJointAnchors()
+    {
+        if (segments.Count == 0) return;
+
+        if (startJoint != null && segments[0] != null)
+        {
+            startJoint.anchor = segments[0].transform.InverseTransformPoint(segments[0].WorldStart);
+            Rigidbody body = startJoint.connectedBody;
+            Vector3 anchor = isAttached && playerRb != null ? GetOrigin() : GetStartAnchorPosition();
+            startJoint.connectedAnchor = body != null ? body.transform.InverseTransformPoint(anchor) : anchor;
+        }
+
+        if (endJoint != null && segments[segments.Count - 1] != null)
+        {
+            RopeSegment last = segments[segments.Count - 1];
+            endJoint.anchor = last.transform.InverseTransformPoint(last.WorldEnd);
+            Rigidbody body = endJoint.connectedBody;
+            Vector3 anchor = GetEndPosition();
+            endJoint.connectedAnchor = body != null ? body.transform.InverseTransformPoint(anchor) : anchor;
+        }
+    }
+
+    ConfigurableJoint AddLockedJoint(GameObject owner, Rigidbody connectedBody, Vector3 anchorWorld, Vector3 connectedAnchorWorld)
+    {
+        ConfigurableJoint joint = owner.AddComponent<ConfigurableJoint>();
+        joint.connectedBody = connectedBody;
+        joint.autoConfigureConnectedAnchor = false;
+        joint.anchor = owner.transform.InverseTransformPoint(anchorWorld);
+        joint.connectedAnchor = connectedBody != null
+            ? connectedBody.transform.InverseTransformPoint(connectedAnchorWorld)
+            : connectedAnchorWorld;
+
+        joint.xMotion = ConfigurableJointMotion.Locked;
+        joint.yMotion = ConfigurableJointMotion.Locked;
+        joint.zMotion = ConfigurableJointMotion.Locked;
+        joint.angularXMotion = ConfigurableJointMotion.Free;
+        joint.angularYMotion = ConfigurableJointMotion.Free;
+        joint.angularZMotion = ConfigurableJointMotion.Free;
+        joint.projectionMode = JointProjectionMode.None;
+        joint.enablePreprocessing = false;
+        joint.enableCollision = false;
+        joint.massScale = 1f;
+        joint.connectedMassScale = 1f;
+        return joint;
+    }
+
+    void RemoveSegmentJoints()
+    {
+        for (int i = 0; i < segments.Count; i++)
+        {
+            if (segments[i] == null) continue;
+            ConfigurableJoint[] joints = segments[i].GetComponents<ConfigurableJoint>();
+            for (int j = joints.Length - 1; j >= 0; j--)
+            {
+                DestroyImmediate(joints[j]);
+            }
+        }
+    }
+
+    void EnsureRootAndAnchors()
+    {
+        if (physicalRoot == null)
+        {
+            GameObject root = new GameObject("PhysicalRopeChain");
+            root.transform.SetParent(transform, false);
+            physicalRoot = root.transform;
+        }
+
+        if (startAnchorRb == null) startAnchorRb = CreateAnchor("RopeStartAnchor", GetStartAnchorPosition());
+        if (endAnchorRb == null) endAnchorRb = CreateAnchor("RopeEndAnchor", GetEndPosition());
+    }
+
+    Rigidbody CreateAnchor(string anchorName, Vector3 position)
+    {
+        GameObject anchor = new GameObject(anchorName);
+        anchor.transform.SetParent(physicalRoot, true);
+        anchor.transform.position = position;
+
+        Rigidbody body = anchor.AddComponent<Rigidbody>();
+        body.useGravity = false;
+        body.isKinematic = true;
+        body.interpolation = RigidbodyInterpolation.Interpolate;
+        body.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+        return body;
+    }
+
+    void UpdateEndpointAnchors()
+    {
+        EnsureRootAndAnchors();
+        MoveAnchor(startAnchorRb, GetStartAnchorPosition());
+        MoveAnchor(endAnchorRb, GetEndPosition());
+    }
+
+    void MoveAnchor(Rigidbody body, Vector3 position)
+    {
+        if (body == null) return;
+        if (Application.isPlaying) body.MovePosition(position);
+        else body.position = position;
+        body.transform.position = position;
+    }
+
+    Rigidbody GetEndBody()
+    {
+        if (isFiring && flyingHookRb != null) return flyingHookRb;
+        return endAnchorRb;
     }
 
     Vector3 GetOrigin()
     {
         if (ropeOrigin != null) return ropeOrigin.position;
-        return player != null ? player.position : transform.position;
+        if (player != null) return player.position;
+        return transform.position;
     }
 
-    Vector3 GetActiveAnchor()
+    Vector3 GetStartAnchorPosition()
     {
-        return wrapPoints.Count > 0 ? wrapPoints[wrapPoints.Count - 1] : GetFinalAnchor();
+        return GetOrigin();
     }
 
-    Vector3 GetFinalAnchor()
+    Vector3 GetEndPosition()
     {
-        return dynamicAnchor != null ? dynamicAnchor.position : anchorPoint;
+        if (isFiring && flyingHook != null) return flyingHook.position;
+        return anchorPoint;
     }
 
-    public bool TryAttachToFiringWrap(LayerMask collisionMask)
+    int DesiredSegmentCount(float length)
     {
-        if (!isFiring || isAttached || flyingHook == null) return false;
-        if (!allowFiringWrapWhileGrounded && IsPlayerGroundedOnRopeCollision()) return false;
-
-        ropeCollisionMask = collisionMask;
-        Vector3 origin = GetOrigin();
-        Vector3 toHook = flyingHook.position - origin;
-        float distance = toHook.magnitude;
-        if (distance <= minFiringWrapDistance + minHookDistancePastWrap) return false;
-
-        RaycastHit[] hits = Physics.RaycastAll(origin, toHook / distance, distance - 0.05f, ropeCollisionMask, QueryTriggerInteraction.Ignore);
-        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
-
-        for (int i = 0; i < hits.Length; i++)
-        {
-            RaycastHit hit = hits[i];
-            if (hit.collider == null) continue;
-            if (hit.distance < minFiringWrapDistance) continue;
-            if (distance - hit.distance < minHookDistancePastWrap) continue;
-            if (IsPlayerOrHookCollider(hit.collider)) continue;
-            if (IsPlayerStandingOnCollider(hit.collider)) continue;
-
-            RopeCollisionWrapper wrapper = hit.collider.GetComponentInParent<RopeCollisionWrapper>();
-            float offset = wrapper != null ? wrapper.WrapOffset : wrapPointOffset;
-            Vector3 wrapPoint = hit.point + hit.normal * offset;
-
-            dynamicAnchor = flyingHook;
-            anchorPoint = flyingHook.position;
-            currentRopeLength = Mathf.Clamp(Vector3.Distance(origin, wrapPoint) + attachSlack, minRopeLength, maxRopeLength);
-            currentSwingEffort = maxSwingEffort;
-            attachTime = Time.time;
-            constraintGraceFramesRemaining = attachConstraintGraceFrames;
-            smoothedSwingInput = Vector2.zero;
-            wrapPoints.Clear();
-            wrapPoints.Add(wrapPoint);
-            isAttached = true;
-            isFiring = false;
-            return true;
-        }
-
-        return false;
+        float safeSegmentLength = Mathf.Max(0.1f, physicalSegmentLength);
+        return Mathf.Clamp(Mathf.CeilToInt(Mathf.Max(safeSegmentLength, length) / safeSegmentLength), 1, maxPhysicalSegments);
     }
 
-    bool IsPlayerOrHookCollider(Collider collider)
+    void UpdateCurrentLengthAndTension()
     {
-        if (player != null && collider.transform.IsChildOf(player)) return true;
-        if (flyingHook != null && collider.transform.IsChildOf(flyingHook)) return true;
-        if (collider.GetComponentInParent<HookProjectile>() != null) return true;
-        return false;
+        currentRopeLength = segments.Count * Mathf.Max(0.1f, physicalSegmentLength);
+        float directDistance = isFiring || isAttached ? Vector3.Distance(GetOrigin(), GetEndPosition()) : 0f;
+        currentTension = Mathf.Max(0f, directDistance - currentRopeLength) * 30f;
     }
 
-    bool IsPlayerGroundedOnRopeCollision()
+    void ApplyAttachedDamping()
     {
-        if (player == null) return false;
-        RaycastHit hit;
-        return Physics.Raycast(player.position + Vector3.up * 0.15f, Vector3.down, out hit, groundedWrapIgnoreDistance, ropeCollisionMask, QueryTriggerInteraction.Ignore)
-            && !IsPlayerOrHookCollider(hit.collider);
+        if (playerRb == null || attachedVelocityDamping <= 0f) return;
+        playerRb.linearVelocity *= Mathf.Clamp01(1f - attachedVelocityDamping * Time.fixedDeltaTime);
     }
 
-    bool IsPlayerStandingOnCollider(Collider collider)
+    void IgnoreOwnerCollisions()
     {
-        if (player == null || collider == null) return false;
-        RaycastHit hit;
-        if (!Physics.Raycast(player.position + Vector3.up * 0.15f, Vector3.down, out hit, groundedWrapIgnoreDistance, ropeCollisionMask, QueryTriggerInteraction.Ignore)) return false;
-        if (hit.collider == collider) return true;
-        return hit.collider != null && hit.collider.transform.root == collider.transform.root;
-    }
-
-    void ApplyFlyingRopePhysics()
-    {
-        if (!applyFlyingRopeTension || flyingHook == null || flyingHookRb == null) return;
-
-        Vector3 origin = GetOrigin();
-        Vector3 toHook = flyingHook.position - origin;
-        float distance = toHook.magnitude;
-        if (distance <= maxRopeLength || distance <= 0.001f) return;
-
-        Vector3 ropeDirection = toHook / distance;
-        flyingHookRb.MovePosition(origin + ropeDirection * maxRopeLength);
-
-        Vector3 hookVelocity = flyingHookRb.linearVelocity;
-        Vector3 radialVelocity = Vector3.Project(hookVelocity, ropeDirection);
-        if (Vector3.Dot(radialVelocity, ropeDirection) > 0f)
-        {
-            flyingHookRb.linearVelocity = (hookVelocity - radialVelocity) * flyingHookVelocityDamping;
-        }
-
-        if (playerRb != null)
-        {
-            playerRb.AddForce(ropeDirection * (distance - maxRopeLength) * flyingPlayerPullStrength, ForceMode.Acceleration);
-        }
-    }
-
-    void UpdateClimbInput()
-    {
-        if (Time.time - attachTime < attachInputGraceTime) return;
-        float delta = 0f;
-        if (PrototypeInput.ShiftHeld) delta -= ropeClimbSpeed * Time.deltaTime;
-        if (PrototypeInput.ControlHeld) delta += ropeClimbSpeed * Time.deltaTime;
-        currentRopeLength = Mathf.Clamp(currentRopeLength + delta, minRopeLength, maxRopeLength);
-    }
-
-    void ApplyConstraint()
-    {
-        Vector3 origin = GetOrigin();
-        Vector3 activeAnchor = GetActiveAnchor();
-        Vector3 fromAnchor = origin - activeAnchor;
-        float distance = fromAnchor.magnitude;
-        if (distance <= 0.001f) return;
-
-        Vector3 ropeDirection = fromAnchor / distance;
-        if (distance >= currentRopeLength)
-        {
-            if (hardConstraint)
-            {
-                Vector3 constrainedOrigin = activeAnchor + ropeDirection * currentRopeLength;
-                Vector3 playerDelta = constrainedOrigin - origin;
-                playerRb.MovePosition(playerRb.position + playerDelta);
-
-                Vector3 radialVelocity = Vector3.Project(playerRb.linearVelocity, ropeDirection);
-                Vector3 tangentialVelocity = playerRb.linearVelocity - radialVelocity;
-                float radialSpeed = Vector3.Dot(radialVelocity, ropeDirection);
-                if (radialSpeed > 0f)
-                {
-                    playerRb.linearVelocity = tangentialVelocity;
-                }
-                else
-                {
-                    playerRb.linearVelocity = tangentialVelocity + radialVelocity * inwardVelocityPreservation;
-                }
-                return;
-            }
-
-            float excess = distance - currentRopeLength;
-            playerRb.AddForce(-ropeDirection * excess * ropeConstraintStrength, ForceMode.Acceleration);
-
-            Vector3 awayVelocity = Vector3.Project(playerRb.linearVelocity, ropeDirection);
-            if (Vector3.Dot(awayVelocity, ropeDirection) > 0f)
-            {
-                playerRb.linearVelocity -= awayVelocity * Mathf.Clamp01(ropeDamping * Time.fixedDeltaTime);
-            }
-        }
-    }
-
-    bool ApplyLedgeAssist()
-    {
-        if (!ledgeAssistEnabled || playerRb == null || player == null) return false;
-        if (wrapPoints.Count > 0 || dynamicAnchor != null) return false;
-        if (Time.time - attachTime < attachInputGraceTime) return false;
-        if (IsPlayerGroundedOnRopeCollision()) return false;
-        if (!PrototypeInput.ShiftHeld)
-        {
-            isMantlingLedge = false;
-            SetMantleCollision(true);
-            return false;
-        }
-        if (currentRopeLength > ledgeAssistRopeLength) return false;
-
-        if (isMantlingLedge)
-        {
-            UpdateMantle();
-            return true;
-        }
-
-        Vector3 anchor = GetFinalAnchor();
-        float heightAbovePlayer = anchor.y - player.position.y;
-        if (heightAbovePlayer < ledgeAssistMinAnchorHeight || heightAbovePlayer > ledgeAssistMaxAnchorHeight) return false;
-
-        Vector3 planarToAnchor = Vector3.ProjectOnPlane(anchor - player.position, Vector3.up);
-        if (planarToAnchor.sqrMagnitude < 0.04f && cameraTransform != null)
-        {
-            planarToAnchor = Vector3.ProjectOnPlane(cameraTransform.forward, Vector3.up);
-        }
-        if (planarToAnchor.sqrMagnitude < 0.04f) planarToAnchor = player.forward;
-
-        Vector3 inward = planarToAnchor.normalized;
-        Vector3 surfaceProbeStart = anchor + inward * ledgeAssistInwardOffset + Vector3.up * ledgeAssistSurfaceProbeHeight;
-        RaycastHit surfaceHit;
-        if (!Physics.Raycast(surfaceProbeStart, Vector3.down, out surfaceHit, ledgeAssistSurfaceProbeDistance, ropeCollisionMask, QueryTriggerInteraction.Ignore))
-        {
-            surfaceProbeStart = anchor + Vector3.up * ledgeAssistSurfaceProbeHeight;
-            if (!Physics.Raycast(surfaceProbeStart, Vector3.down, out surfaceHit, ledgeAssistSurfaceProbeDistance, ropeCollisionMask, QueryTriggerInteraction.Ignore)) return false;
-        }
-        if (Vector3.Dot(surfaceHit.normal, Vector3.up) < 0.65f) return false;
-
-        StartMantle(inward, surfaceHit.point);
-        UpdateMantle();
-        return true;
-    }
-
-    void StartMantle(Vector3 inward, Vector3 topPoint)
-    {
-        float standHeight = GetPlayerStandHeight();
-        float sideClearance = GetPlayerRadius() + ledgeAssistSideClearance;
-        Vector3 edgePoint = FindLedgeEdge(topPoint, inward);
-
-        mantleSideLow = edgePoint - inward * sideClearance;
-        mantleSideLow.y = Mathf.Min(playerRb.position.y, topPoint.y + standHeight);
-        mantleSideHigh = new Vector3(mantleSideLow.x, topPoint.y + standHeight, mantleSideLow.z);
-        mantleTop = topPoint + inward * sideClearance + Vector3.up * standHeight;
-        mantleStage = 0;
-        isMantlingLedge = true;
-        SetMantleCollision(false);
-    }
-
-    Vector3 FindLedgeEdge(Vector3 topPoint, Vector3 inward)
-    {
-        Vector3 lastGround = topPoint;
-        int steps = 8;
-        for (int i = 1; i <= steps; i++)
-        {
-            float distance = ledgeAssistEdgeSearchDistance * (i / (float)steps);
-            Vector3 candidate = topPoint - inward * distance;
-            Vector3 probeStart = candidate + Vector3.up * ledgeAssistSurfaceProbeHeight;
-            RaycastHit hit;
-            if (Physics.Raycast(probeStart, Vector3.down, out hit, ledgeAssistSurfaceProbeDistance, ropeCollisionMask, QueryTriggerInteraction.Ignore)
-                && Vector3.Dot(hit.normal, Vector3.up) >= 0.65f)
-            {
-                lastGround = hit.point;
-            }
-            else
-            {
-                return lastGround;
-            }
-        }
-
-        return lastGround;
-    }
-
-    void UpdateMantle()
-    {
-        Vector3 target = mantleStage == 0 ? mantleSideLow : mantleStage == 1 ? mantleSideHigh : mantleTop;
-        Vector3 nextPosition = Vector3.MoveTowards(playerRb.position, target, ledgeAssistMoveSpeed * Time.fixedDeltaTime);
-        if (Vector3.Distance(nextPosition, target) <= ledgeAssistSnapDistance) nextPosition = target;
-
-        playerRb.MovePosition(nextPosition);
-
-        Vector3 desiredVelocity = target - playerRb.position;
-        if (desiredVelocity.sqrMagnitude > 0.01f)
-        {
-            Vector3 mantleVelocity = desiredVelocity.normalized * Mathf.Min(ledgeAssistMoveSpeed, desiredVelocity.magnitude / Time.fixedDeltaTime);
-            playerRb.linearVelocity = Vector3.Lerp(playerRb.linearVelocity, mantleVelocity, 0.55f);
-        }
-
-        if (Vector3.Distance(nextPosition, target) <= ledgeAssistStageTolerance)
-        {
-            mantleStage++;
-            if (mantleStage > 2)
-            {
-                isMantlingLedge = false;
-                SetMantleCollision(true);
-                playerRb.linearVelocity = Vector3.ProjectOnPlane(playerRb.linearVelocity, Vector3.up);
-                Detach();
-                return;
-            }
-        }
-
-        currentRopeLength = Mathf.Clamp(Mathf.Min(currentRopeLength, Vector3.Distance(GetOrigin(), GetFinalAnchor())), minRopeLength, maxRopeLength);
-    }
-
-    float GetPlayerStandHeight()
-    {
-        CapsuleCollider capsule = player != null ? player.GetComponent<CapsuleCollider>() : null;
-        if (capsule == null) return 1f;
-        return Mathf.Max(0.5f, capsule.height * 0.5f + 0.05f);
-    }
-
-    float GetPlayerRadius()
-    {
-        CapsuleCollider capsule = player != null ? player.GetComponent<CapsuleCollider>() : null;
-        if (capsule == null) return 0.5f;
-        return Mathf.Max(0.25f, capsule.radius);
-    }
-
-    void SetMantleCollision(bool enabled)
-    {
+        if (segments.Count == 0) return;
         if (playerCollider == null && player != null) playerCollider = player.GetComponent<Collider>();
-        if (playerCollider == null) return;
 
-        if (!enabled)
+        for (int i = 0; i < segments.Count; i++)
         {
-            if (mantleCollisionSuppressed) return;
-            playerColliderWasEnabled = playerCollider.enabled;
-            playerCollider.enabled = false;
-            mantleCollisionSuppressed = true;
-            return;
-        }
+            if (segments[i] == null) continue;
+            Collider segmentCollider = segments[i].GetComponent<Collider>();
+            if (segmentCollider == null) continue;
 
-        if (!mantleCollisionSuppressed) return;
-        playerCollider.enabled = playerColliderWasEnabled;
-        mantleCollisionSuppressed = false;
-    }
-
-    void ApplySwingForces()
-    {
-        if (cameraTransform == null) return;
-
-        smoothedSwingInput = Vector2.Lerp(smoothedSwingInput, PrototypeInput.Move, Mathf.Clamp01(swingInputResponse * Time.fixedDeltaTime));
-        float x = smoothedSwingInput.x;
-        float z = smoothedSwingInput.y;
-        Vector3 input = cameraTransform.forward * z + cameraTransform.right * x;
-        RechargeSwingEffort(input.sqrMagnitude < 0.01f);
-
-        Vector3 ropeDirection = ((player != null ? player.position : GetOrigin()) - GetActiveAnchor()).normalized;
-        Vector3 tangentialVelocity = Vector3.ProjectOnPlane(playerRb.linearVelocity, ropeDirection);
-        if (tangentialVelocity.sqrMagnitude > 0.01f)
-        {
-            playerRb.AddForce(-tangentialVelocity * tangentialAirResistance, ForceMode.Acceleration);
-        }
-
-        if (input.sqrMagnitude < 0.01f || currentSwingEffort <= 0.001f) return;
-
-        Vector3 swingDirection = Vector3.ProjectOnPlane(input, ropeDirection);
-        if (swingDirection.sqrMagnitude < 0.001f) return;
-
-        float effort01 = Mathf.Clamp01(currentSwingEffort / maxSwingEffort);
-        float effortMultiplier = Mathf.Lerp(exhaustedSwingMultiplier, 1f, effort01);
-        Vector3 desiredDirection = swingDirection.normalized;
-        Vector3 movingDirection = tangentialVelocity.sqrMagnitude > 0.16f ? tangentialVelocity.normalized : Vector3.zero;
-        float alignment = movingDirection == Vector3.zero ? 0f : Vector3.Dot(desiredDirection, movingDirection);
-        float poweredAngle = Vector3.Angle(-Vector3.up, ropeDirection);
-
-        Vector3 force = Vector3.zero;
-        if (movingDirection == Vector3.zero)
-        {
-            force = desiredDirection * initialSwingKickForce;
-        }
-        else if (alignment > 0f)
-        {
-            force = desiredDirection * swingForce * effortMultiplier * Mathf.Lerp(0.35f, 1f, alignment);
-        }
-        else
-        {
-            force = desiredDirection * steeringBrakeForce * effortMultiplier;
-        }
-
-        bool tryingToPowerUp = force.y > 0f || Vector3.Dot(desiredDirection, Vector3.up) > 0.15f;
-        if (poweredAngle > maxPoweredAngleFromDown && tryingToPowerUp)
-        {
-            force *= upwardSwingForceMultiplier;
-        }
-
-        if (force.y > 0f)
-        {
-            force.y *= Mathf.Lerp(upwardSwingForceMultiplier, 1f, Mathf.Clamp01(1f - poweredAngle / maxPoweredAngleFromDown));
-        }
-
-        playerRb.AddForce(force, ForceMode.Acceleration);
-        currentSwingEffort = Mathf.Max(0f, currentSwingEffort - swingEffortDrain * Time.fixedDeltaTime);
-    }
-
-    void ApplyHighAngleSwingLimit()
-    {
-        Vector3 ropeDirection = ((player != null ? player.position : GetOrigin()) - GetActiveAnchor()).normalized;
-        float angleFromDown = Vector3.Angle(-Vector3.up, ropeDirection);
-        if (angleFromDown <= hardSwingAngleFromDown) return;
-
-        Vector3 downAlongArc = Vector3.ProjectOnPlane(Vector3.down, ropeDirection);
-        if (downAlongArc.sqrMagnitude > 0.001f)
-        {
-            playerRb.AddForce(downAlongArc.normalized * highAngleBrakeForce, ForceMode.Acceleration);
-        }
-
-        Vector3 tangentialVelocity = Vector3.ProjectOnPlane(playerRb.linearVelocity, ropeDirection);
-        if (tangentialVelocity.y > 0f)
-        {
-            Vector3 upwardVelocity = Vector3.Project(tangentialVelocity, Vector3.up);
-            playerRb.linearVelocity -= upwardVelocity * Mathf.Clamp01(highAngleVelocityDamping);
-        }
-    }
-
-    void ClampSwingAngle()
-    {
-        Vector3 origin = GetOrigin();
-        Vector3 activeAnchor = GetActiveAnchor();
-        Vector3 fromAnchor = origin - activeAnchor;
-        float distance = fromAnchor.magnitude;
-        if (distance <= 0.001f) return;
-
-        Vector3 ropeDirection = fromAnchor / distance;
-        float angleFromDown = Vector3.Angle(Vector3.down, ropeDirection);
-        if (angleFromDown <= hardSwingAngleFromDown) return;
-
-        Vector3 horizontal = Vector3.ProjectOnPlane(ropeDirection, Vector3.up);
-        if (horizontal.sqrMagnitude < 0.001f) horizontal = Vector3.ProjectOnPlane(playerRb.linearVelocity, Vector3.up);
-        if (horizontal.sqrMagnitude < 0.001f) horizontal = Vector3.forward;
-        horizontal.Normalize();
-
-        float limitedRadians = hardSwingAngleFromDown * Mathf.Deg2Rad;
-        Vector3 limitedDirection = horizontal * Mathf.Sin(limitedRadians) + Vector3.down * Mathf.Cos(limitedRadians);
-        Vector3 limitedOrigin = activeAnchor + limitedDirection.normalized * Mathf.Min(distance, currentRopeLength);
-        Vector3 playerDelta = limitedOrigin - origin;
-        playerRb.MovePosition(playerRb.position + playerDelta);
-
-        Vector3 limitedRopeDirection = (limitedOrigin - activeAnchor).normalized;
-        Vector3 tangentialVelocity = Vector3.ProjectOnPlane(playerRb.linearVelocity, limitedRopeDirection);
-        Vector3 downAlongArc = Vector3.ProjectOnPlane(Vector3.down, limitedRopeDirection);
-        if (downAlongArc.sqrMagnitude > 0.001f)
-        {
-            downAlongArc.Normalize();
-            float downSpeed = Vector3.Dot(tangentialVelocity, downAlongArc);
-            if (downSpeed < 0f)
+            if (disablePlayerRopeCollision && playerCollider != null)
             {
-                tangentialVelocity -= downAlongArc * downSpeed;
+                Physics.IgnoreCollision(segmentCollider, playerCollider, true);
+            }
+
+            if (disableHookRopeCollision && ropeEndCollider != null)
+            {
+                Physics.IgnoreCollision(segmentCollider, ropeEndCollider, true);
+            }
+
+            if (!disableRopeSelfCollision) continue;
+            for (int j = i + 1; j < segments.Count; j++)
+            {
+                if (segments[j] == null) continue;
+                Collider other = segments[j].GetComponent<Collider>();
+                if (other != null) Physics.IgnoreCollision(segmentCollider, other, true);
             }
         }
-        tangentialVelocity = Vector3.ClampMagnitude(tangentialVelocity, maxTangentialSpeedAtAngleLimit);
-
-        Vector3 radialVelocity = Vector3.Project(playerRb.linearVelocity, limitedRopeDirection);
-        if (Vector3.Dot(radialVelocity, limitedRopeDirection) > 0f) radialVelocity = Vector3.zero;
-        playerRb.linearVelocity = tangentialVelocity + radialVelocity;
     }
 
-    void ApplyRopeGravity()
+    void SampleSegmentContacts()
     {
-        Vector3 ropeDirection = ((player != null ? player.position : GetOrigin()) - GetActiveAnchor()).normalized;
-        Vector3 tangentialGravity = Vector3.ProjectOnPlane(Physics.gravity, ropeDirection);
-        playerRb.AddForce(tangentialGravity * Mathf.Max(0f, ropeGravityMultiplier - 1f), ForceMode.Acceleration);
-    }
+        if (collisionTracker == null) return;
 
-    void RechargeSwingEffort(bool hasNoInput)
-    {
-        float rechargeMultiplier = hasNoInput ? 1f : 0.35f;
-        currentSwingEffort = Mathf.Min(maxSwingEffort, currentSwingEffort + swingEffortRecharge * rechargeMultiplier * Time.fixedDeltaTime);
-    }
-
-    void UpdateWrapping()
-    {
-        Vector3 origin = GetOrigin();
-        Vector3 activeAnchor = GetActiveAnchor();
-        Vector3 toAnchor = activeAnchor - origin;
-        float distance = toAnchor.magnitude;
-        if (distance > 0.01f)
+        for (int i = 0; i < segments.Count; i++)
         {
-            RaycastHit hit;
-            if (Physics.Raycast(origin, toAnchor.normalized, out hit, distance - 0.05f, ropeCollisionMask, QueryTriggerInteraction.Ignore))
+            RopeSegment segment = segments[i];
+            if (segment == null) continue;
+
+            CapsuleCollider capsule = segment.Capsule;
+            Vector3 pointA = segment.WorldStart;
+            Vector3 pointB = segment.WorldEnd;
+            Collider[] hits = Physics.OverlapCapsule(pointA, pointB, capsule.radius, ropeCollisionMask, QueryTriggerInteraction.Ignore);
+            for (int j = 0; j < hits.Length; j++)
             {
-                if (Vector3.Distance(hit.point, activeAnchor) > 0.5f && (wrapPoints.Count == 0 || Vector3.Distance(wrapPoints[wrapPoints.Count - 1], hit.point) > 0.5f))
-                {
-                    wrapPoints.Add(hit.point + hit.normal * wrapPointOffset);
-                }
+                Collider hit = hits[j];
+                if (hit == null || hit.isTrigger) continue;
+                if (hit.GetComponentInParent<RopeSegment>() != null) continue;
+                if (playerCollider != null && hit == playerCollider) continue;
+                if (ropeEndCollider != null && hit == ropeEndCollider) continue;
+
+                Vector3 closest = hit.ClosestPoint(segment.transform.position);
+                Vector3 normal = segment.transform.position - closest;
+                if (normal.sqrMagnitude < 0.0001f) normal = segment.transform.position - hit.bounds.center;
+                if (normal.sqrMagnitude < 0.0001f) normal = Vector3.up;
+                collisionTracker.ReportContact(hit, closest, normal.normalized, segment.SegmentIndex);
             }
         }
+    }
 
-        if (wrapPoints.Count > 0)
-        {
-            Vector3 previous = wrapPoints.Count > 1 ? wrapPoints[wrapPoints.Count - 2] : GetFinalAnchor();
-            Vector3 toPrevious = previous - origin;
-            if (!Physics.Raycast(origin, toPrevious.normalized, toPrevious.magnitude - 0.05f, ropeCollisionMask, QueryTriggerInteraction.Ignore))
-            {
-                wrapPoints.RemoveAt(wrapPoints.Count - 1);
-            }
-        }
+    void PushTensionToTracker()
+    {
+        if (collisionTracker == null) return;
+
+        Vector3 direction = GetEndPosition() - GetOrigin();
+        collisionTracker.SetTension(currentTension, direction.sqrMagnitude > 0.001f ? direction.normalized : Vector3.zero);
     }
 
     void UpdateLine()
     {
         if (ropeLine == null) return;
-
-        if (isFiring && flyingHook != null)
-        {
-            ropeLine.positionCount = 2;
-            ropeLine.SetPosition(0, GetOrigin());
-            ropeLine.SetPosition(1, flyingHook.position);
-            return;
-        }
-
-        if (!isAttached)
+        if (!isFiring && !isAttached)
         {
             ropeLine.positionCount = 0;
             return;
         }
 
-        ropeLine.positionCount = wrapPoints.Count + 2;
+        ropeLine.widthMultiplier = visualRopeWidth;
+        ropeLine.positionCount = segments.Count + 2;
         ropeLine.SetPosition(0, GetOrigin());
-        for (int i = 0; i < wrapPoints.Count; i++)
+        for (int i = 0; i < segments.Count; i++)
         {
-            ropeLine.SetPosition(i + 1, wrapPoints[wrapPoints.Count - 1 - i]);
+            ropeLine.SetPosition(i + 1, segments[i] != null ? segments[i].transform.position : GetOrigin());
         }
-        ropeLine.SetPosition(wrapPoints.Count + 1, GetFinalAnchor());
+        ropeLine.SetPosition(segments.Count + 1, GetEndPosition());
+    }
+
+    void SetSegmentRendererVisible(RopeSegment segment, bool visible)
+    {
+        if (segment == null) return;
+        Renderer[] renderers = segment.GetComponentsInChildren<Renderer>();
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            renderers[i].enabled = visible;
+        }
+    }
+
+    void ResetPhysicalRope()
+    {
+        segments.Clear();
+        startAnchorRb = null;
+        endAnchorRb = null;
+        startJoint = null;
+        endJoint = null;
+        if (physicalRoot != null)
+        {
+            physicalRoot.gameObject.SetActive(false);
+            DestroyUnityObject(physicalRoot.gameObject);
+            physicalRoot = null;
+        }
+    }
+
+    void DestroySegmentObject(RopeSegment segment)
+    {
+        if (segment == null) return;
+        segment.gameObject.SetActive(false);
+        DestroyUnityObject(segment.gameObject);
+    }
+
+    void DestroyUnityObject(Object target)
+    {
+        if (target == null) return;
+        if (Application.isPlaying) Destroy(target);
+        else DestroyImmediate(target);
+    }
+
+    LayerMask BuildWorldGeometryMask()
+    {
+        int mask = ~0;
+        RemoveLayerFromMask(ref mask, "Player");
+        RemoveLayerFromMask(ref mask, "Hook");
+        RemoveLayerFromMask(ref mask, "Rope");
+        RemoveLayerFromMask(ref mask, "IgnoreRopeSelfCollision");
+        return mask;
+    }
+
+    void RemoveLayerFromMask(ref int mask, string layerName)
+    {
+        int layer = LayerMask.NameToLayer(layerName);
+        if (layer >= 0) mask &= ~(1 << layer);
     }
 
     void OnDrawGizmos()
     {
-        if (!isAttached) return;
+        if (!isAttached && !isFiring) return;
         Gizmos.color = Color.yellow;
-        Gizmos.DrawWireSphere(GetFinalAnchor(), 0.35f);
-        Gizmos.color = Color.magenta;
-        for (int i = 0; i < wrapPoints.Count; i++) Gizmos.DrawWireSphere(wrapPoints[i], 0.25f);
+        Gizmos.DrawWireSphere(GetEndPosition(), 0.25f);
         Gizmos.color = Color.white;
-        Gizmos.DrawWireSphere(GetActiveAnchor(), currentRopeLength);
+        Gizmos.DrawWireSphere(GetOrigin(), 0.12f);
+        if (attachedEdge.IsValid)
+        {
+            Gizmos.color = attachedEdge.AttachSide == GrappleAttachSide.BottomSide ? Color.red : Color.green;
+            Gizmos.DrawWireSphere(attachedEdge.EdgePoint, 0.28f);
+            Gizmos.DrawRay(attachedEdge.EdgePoint, attachedEdge.EdgeDirection * 0.8f);
+        }
+        if (drawContactGizmos && collisionTracker != null) collisionTracker.DrawDebugGizmos();
     }
 }

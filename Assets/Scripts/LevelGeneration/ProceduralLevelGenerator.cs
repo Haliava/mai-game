@@ -221,6 +221,7 @@ public class ProceduralLevelGenerator : MonoBehaviour
         platform.transform.SetParent(chunk.transform, true);
         platform.transform.position = position;
         platform.transform.localScale = new Vector3(width, Random.Range(1f, 2.6f), depth);
+        PrepareGrappleGeometry(platform);
         ApplyMaterial(platform, stoneMaterial);
 
         NavigationNode node = new GameObject("NavigationNode").AddComponent<NavigationNode>();
@@ -242,6 +243,7 @@ public class ProceduralLevelGenerator : MonoBehaviour
         point.transform.SetParent(chunk.transform, true);
         point.transform.position = position;
         point.transform.localScale = Vector3.one * 0.65f;
+        SetLayerIfExists(point, "GrappleGeometry", "GrappleSurface");
         if (point.GetComponent<GrapplePoint>() == null) point.AddComponent<GrapplePoint>();
         ApplyMaterial(point, grappleMaterial);
         chunk.grapplePoints.Add(point.transform);
@@ -255,7 +257,7 @@ public class ProceduralLevelGenerator : MonoBehaviour
         float height = Random.Range(10f, chunkSize.y);
         column.transform.position = position + Vector3.down * height * 0.4f;
         column.transform.localScale = new Vector3(Random.Range(1f, 4f), height * 0.5f, Random.Range(1f, 4f));
-        if (column.GetComponent<RopeCollisionWrapper>() == null) column.AddComponent<RopeCollisionWrapper>();
+        PrepareGrappleGeometry(column);
         ApplyMaterial(column, stoneMaterial);
     }
 
@@ -285,6 +287,7 @@ public class ProceduralLevelGenerator : MonoBehaviour
             GameObject instance = Instantiate(prefab, position, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f), chunk.transform);
             instance.name = prefab.name + "_Instance";
             instance.transform.localScale *= scaleMultiplier;
+            PrepareGrappleGeometry(instance);
             return;
         }
 
@@ -299,6 +302,7 @@ public class ProceduralLevelGenerator : MonoBehaviour
             block.transform.localPosition = new Vector3(Random.Range(-4f, 4f), i * 1.2f, Random.Range(-4f, 4f));
             block.transform.localScale = new Vector3(Random.Range(1f, 4f), Random.Range(1f, 3f), Random.Range(1f, 4f)) * scaleMultiplier;
             block.transform.localRotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+            PrepareGrappleGeometry(block);
             ApplyMaterial(block, stoneMaterial);
         }
     }
@@ -321,5 +325,40 @@ public class ProceduralLevelGenerator : MonoBehaviour
     {
         Renderer renderer = go.GetComponent<Renderer>();
         if (renderer != null && mat != null) renderer.sharedMaterial = mat;
+    }
+
+    void PrepareGrappleGeometry(GameObject go)
+    {
+        if (go == null) return;
+        Collider[] colliders = go.GetComponentsInChildren<Collider>();
+        if (colliders.Length == 0)
+        {
+            PrepareSingleGrappleGeometry(go);
+            return;
+        }
+
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            PrepareSingleGrappleGeometry(colliders[i].gameObject);
+        }
+    }
+
+    void PrepareSingleGrappleGeometry(GameObject go)
+    {
+        SetLayerIfExists(go, "GrappleGeometry", "GrappleSurface");
+        if (go.GetComponent<GrappleSurface>() == null) go.AddComponent<GrappleSurface>();
+        if (go.GetComponent<RopeCollisionWrapper>() == null) go.AddComponent<RopeCollisionWrapper>();
+    }
+
+    void SetLayerIfExists(GameObject go, params string[] layerNames)
+    {
+        if (go == null || layerNames == null) return;
+        for (int i = 0; i < layerNames.Length; i++)
+        {
+            int layer = LayerMask.NameToLayer(layerNames[i]);
+            if (layer < 0) continue;
+            go.layer = layer;
+            return;
+        }
     }
 }

@@ -71,6 +71,7 @@ public class MegastructureBoundaryBuilder : MonoBehaviour
             wall.transform.position = radial * radius + Vector3.up * centerY;
             wall.transform.rotation = Quaternion.LookRotation(-radial, Vector3.up);
             wall.transform.localScale = new Vector3(chord, height, wallThickness);
+            PrepareGrappleGeometry(wall);
 
             Renderer renderer = wall.GetComponent<Renderer>();
             if (renderer != null)
@@ -93,6 +94,7 @@ public class MegastructureBoundaryBuilder : MonoBehaviour
             bottom.transform.SetParent(wallRoot, false);
             bottom.transform.position = Vector3.up * (wallTopY - height - bottomOccluderExtraDepth);
             bottom.transform.localScale = new Vector3(radius * 2.05f, bottomOccluderThickness * 0.5f, radius * 2.05f);
+            PrepareGrappleGeometry(bottom);
 
             Renderer renderer = bottom.GetComponent<Renderer>();
             if (renderer != null)
@@ -154,5 +156,25 @@ public class MegastructureBoundaryBuilder : MonoBehaviour
         float radius = chunkWidth * diameterInChunks * 0.5f;
         Gizmos.color = new Color(0.7f, 0.9f, 1f, 0.45f);
         Gizmos.DrawWireSphere(transform.position, radius);
+    }
+
+    void PrepareGrappleGeometry(GameObject go)
+    {
+        if (go == null) return;
+        SetLayerIfExists(go, "GrappleGeometry", "GrappleSurface");
+        if (go.GetComponent<GrappleSurface>() == null) go.AddComponent<GrappleSurface>();
+        if (go.GetComponent<RopeCollisionWrapper>() == null) go.AddComponent<RopeCollisionWrapper>();
+    }
+
+    void SetLayerIfExists(GameObject go, params string[] layerNames)
+    {
+        if (go == null || layerNames == null) return;
+        for (int i = 0; i < layerNames.Length; i++)
+        {
+            int layer = LayerMask.NameToLayer(layerNames[i]);
+            if (layer < 0) continue;
+            go.layer = layer;
+            return;
+        }
     }
 }

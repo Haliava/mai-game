@@ -10,14 +10,20 @@ public class HookProjectile : MonoBehaviour
     LayerMask grappleMask;
     bool armed;
     [SerializeField] float hookMass = 0.25f;
-    [SerializeField] float slideDamping = 0.8f;
+    [SerializeField] float slideDamping = 1f;
     [SerializeField] float slideDownForce = 12f;
+    [SerializeField] float hookDrag = 0f;
+
+    Collider hookCollider;
+    PhysicsMaterial frictionlessMaterial;
 
     public Rigidbody Rigidbody { get { return rb; } }
 
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
+        hookCollider = GetComponent<Collider>();
+        EnsureFrictionlessCollider();
         EnsureLight();
     }
 
@@ -27,6 +33,8 @@ public class HookProjectile : MonoBehaviour
         grappleMask = attachMask;
         armed = true;
         if (rb == null) rb = GetComponent<Rigidbody>();
+        if (hookCollider == null) hookCollider = GetComponent<Collider>();
+        EnsureFrictionlessCollider();
         EnsureLight();
         gameObject.SetActive(true);
         transform.position = position;
@@ -34,6 +42,8 @@ public class HookProjectile : MonoBehaviour
         rb.isKinematic = false;
         rb.useGravity = true;
         rb.mass = hookMass;
+        rb.linearDamping = hookDrag;
+        rb.angularDamping = 0f;
         rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
         rb.interpolation = RigidbodyInterpolation.Interpolate;
         rb.linearVelocity = velocity;
@@ -44,24 +54,40 @@ public class HookProjectile : MonoBehaviour
     {
         if (!armed || owner == null) return;
 
-        ContactPoint contact = collision.contacts.Length > 0 ? collision.contacts[0] : default(ContactPoint);
-        GrapplePoint point = collision.collider.GetComponentInParent<GrapplePoint>();
-        bool layerAllowed = ((1 << collision.gameObject.layer) & grappleMask.value) != 0;
-        bool canAttachHere = owner != null && owner.IsAttachSurfaceAllowed(contact.normal);
-        Vector3 attachPosition = point != null ? point.AttachTransform.position : contact.point;
-        bool targetAllowed = owner != null && owner.IsAttachTargetAllowed(collision.collider, attachPosition);
-        if ((point != null || layerAllowed) && canAttachHere && targetAllowed)
+        TryAttachOrSlide(collision, true);
+    }
+
+    void OnCollisionStay(Collision collision)
+    {
+        if (!armed || owner == null) return;
+
+        TryAttachOrSlide(collision, true);
+    }
+
+    void TryAttachOrSlide(Collision collision, bool slideIfRejected)
+    {
+        Vector3 attachPosition;
+        if (owner.TryResolveHookAttach(collision, this, out attachPosition))
         {
             armed = false;
-            rb.linearVelocity = Vector3.zero;
-            rb.isKinematic = true;
-            transform.position = attachPosition;
-            owner.AttachAt(attachPosition, point);
+            PinTo(attachPosition);
+            owner.ConfirmHookAttached(attachPosition, collision.collider.GetComponentInParent<GrapplePoint>());
         }
-        else
+        else if (slideIfRejected)
         {
+            ContactPoint contact = collision.contacts.Length > 0 ? collision.contacts[0] : default(ContactPoint);
             SlideFromSurface(contact.normal);
         }
+    }
+
+    public void PinTo(Vector3 position)
+    {
+        if (rb == null) rb = GetComponent<Rigidbody>();
+        armed = false;
+        rb.linearVelocity = Vector3.zero;
+        rb.angularVelocity = Vector3.zero;
+        rb.isKinematic = true;
+        transform.position = position;
     }
 
     void SlideFromSurface(Vector3 normal)
@@ -73,6 +99,23 @@ public class HookProjectile : MonoBehaviour
 
         rb.isKinematic = false;
         rb.linearVelocity = slideVelocity + downSlide;
+    }
+
+    void EnsureFrictionlessCollider()
+    {
+        if (hookCollider == null) return;
+
+        if (frictionlessMaterial == null)
+        {
+            frictionlessMaterial = new PhysicsMaterial("Hook_Frictionless");
+            frictionlessMaterial.dynamicFriction = 0f;
+            frictionlessMaterial.staticFriction = 0f;
+            frictionlessMaterial.bounciness = 0f;
+            frictionlessMaterial.frictionCombine = PhysicsMaterialCombine.Minimum;
+            frictionlessMaterial.bounceCombine = PhysicsMaterialCombine.Minimum;
+        }
+
+        hookCollider.sharedMaterial = frictionlessMaterial;
     }
 
     void OnDisable()

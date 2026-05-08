@@ -4,7 +4,7 @@ using UnityEngine;
 public class RopeRenderer : MonoBehaviour
 {
     [SerializeField] LineRenderer line;
-    [SerializeField] float width = 0.04f;
+    [SerializeField] float width = 0.018f;
     [SerializeField] Material material;
 
     void Awake()

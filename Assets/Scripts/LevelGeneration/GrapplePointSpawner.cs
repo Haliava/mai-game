@@ -10,6 +10,9 @@ public class GrapplePointSpawner : MonoBehaviour
         instance.name = "GrapplePoint";
         instance.transform.position = position;
         instance.transform.localScale = Vector3.one * 0.65f;
+        int layer = LayerMask.NameToLayer("GrappleGeometry");
+        if (layer < 0) layer = LayerMask.NameToLayer("GrappleSurface");
+        if (layer >= 0) instance.layer = layer;
         GrapplePoint point = instance.GetComponent<GrapplePoint>();
         if (point == null) point = instance.AddComponent<GrapplePoint>();
         return point;

@@ -19,10 +19,10 @@ TagManager:
   - RopeCollision
   - Monster
   - DamageVolume
-  - 
-  - 
-  - 
-  - 
+  - Hook
+  - Rope
+  - GrappleGeometry
+  - IgnoreRopeSelfCollision
   - 
   - 
   - 

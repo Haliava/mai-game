@@ -22,12 +22,8 @@ public class PrototypeSceneBootstrapper : MonoBehaviour
         EnsureSideStartPlatform();
 
         GameObject hookPrefab = CreateHookPrefab();
-        RopeController rope = player.GetComponentInChildren<RopeController>();
-        GrapplingHookController hook = player.GetComponent<GrapplingHookController>();
-        if (hook != null)
-        {
-            typeof(GrapplingHookController).GetField("hookPrefab", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(hook, hookPrefab.GetComponent<HookProjectile>());
-        }
+        EnsurePlayerGrappleSetup(player, hookPrefab);
+        ConfigurePhysicsCollisionMatrix();
 
         EnsureLighting(player, hookPrefab);
 
@@ -86,20 +82,31 @@ public class PrototypeSceneBootstrapper : MonoBehaviour
 
         LineRenderer line = player.AddComponent<LineRenderer>();
         line.material = new Material(Shader.Find("Sprites/Default"));
-        line.widthMultiplier = 0.04f;
+        line.widthMultiplier = 0.018f;
 
         RopeController rope = player.AddComponent<RopeController>();
+        RopeCollisionTracker tracker = player.GetComponent<RopeCollisionTracker>();
+        if (tracker == null) tracker = player.AddComponent<RopeCollisionTracker>();
         SetPrivate(rope, "player", player.transform);
         SetPrivate(rope, "playerRb", rb);
         SetPrivate(rope, "ropeOrigin", ropeOrigin.transform);
         SetPrivate(rope, "cameraTransform", cam.transform);
         SetPrivate(rope, "ropeLine", line);
+        SetPrivate(rope, "collisionTracker", tracker);
+        SetPrivate(rope, "ropeCollisionMask", BuildWorldGeometryMask());
+        SetPrivate(rope, "visualRopeWidth", 0.018f);
+        SetPrivate(rope, "showPhysicalSegmentRenderers", false);
+        SetPrivate(rope, "physicalSegmentLength", 0.4f);
+        SetPrivate(rope, "physicalSegmentRadius", 0.085f);
+        SetPrivate(rope, "maxPhysicalSegments", 90);
 
         FirstPersonController movement = player.AddComponent<FirstPersonController>();
         SetPrivate(movement, "ropeController", rope);
         PlayerCameraController look = player.AddComponent<PlayerCameraController>();
         SetPrivate(look, "cameraHolder", holder.transform);
         player.AddComponent<PlayerMomentumController>();
+        PlayerLedgeMountAssist ledgeAssist = player.AddComponent<PlayerLedgeMountAssist>();
+        SetPrivate(rope, "ledgeMountAssist", ledgeAssist);
         player.AddComponent<PlayerDamageController>();
         player.AddComponent<FallDamageDetector>();
         player.AddComponent<CollisionDamageDetector>();
@@ -111,10 +118,17 @@ public class PrototypeSceneBootstrapper : MonoBehaviour
         playerLight.color = new Color(0.82f, 0.9f, 1f);
         playerLight.shadows = LightShadows.None;
         player.AddComponent<PlayerLightController>();
+        HookEdgeDetector edgeDetector = player.AddComponent<HookEdgeDetector>();
+        HookAttachValidator attachValidator = player.AddComponent<HookAttachValidator>();
         GrapplingHookController hook = player.AddComponent<GrapplingHookController>();
         SetPrivate(hook, "cameraTransform", cam.transform);
         SetPrivate(hook, "ropeOrigin", ropeOrigin.transform);
         SetPrivate(hook, "ropeController", rope);
+        SetPrivate(hook, "edgeDetector", edgeDetector);
+        SetPrivate(hook, "attachValidator", attachValidator);
+        SetPrivate(hook, "ropeCollisionTracker", tracker);
+        SetPrivate(hook, "grappleMask", BuildWorldGeometryMask());
+        SetPrivate(hook, "ropeCollisionMask", BuildWorldGeometryMask());
 
         return player;
     }
@@ -127,6 +141,7 @@ public class PrototypeSceneBootstrapper : MonoBehaviour
         GameObject hook = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         hook.name = "HookProjectile_RuntimePrefab";
         hook.transform.localScale = Vector3.one * 0.18f;
+        SetLayerIfExists(hook, "Hook");
         hook.SetActive(false);
         Rigidbody rb = hook.AddComponent<Rigidbody>();
         rb.useGravity = false;
@@ -140,6 +155,73 @@ public class PrototypeSceneBootstrapper : MonoBehaviour
         hookLight.enabled = false;
         hook.AddComponent<HookProjectile>();
         return hook;
+    }
+
+    void EnsurePlayerGrappleSetup(GameObject player, GameObject hookPrefab)
+    {
+        if (player == null) return;
+
+        Rigidbody rb = player.GetComponent<Rigidbody>();
+        RopeController rope = player.GetComponentInChildren<RopeController>();
+        if (rope == null) rope = player.AddComponent<RopeController>();
+
+        RopeCollisionTracker tracker = player.GetComponent<RopeCollisionTracker>();
+        if (tracker == null) tracker = player.AddComponent<RopeCollisionTracker>();
+
+        LineRenderer line = player.GetComponent<LineRenderer>();
+        if (line == null)
+        {
+            line = player.AddComponent<LineRenderer>();
+            line.material = new Material(Shader.Find("Sprites/Default"));
+            line.widthMultiplier = 0.018f;
+        }
+
+        Camera cam = Camera.main;
+        Transform holder = player.transform.Find("CameraHolder");
+        Transform ropeOrigin = holder != null ? holder.Find("RopeOrigin") : player.transform.Find("RopeOrigin");
+        if (ropeOrigin == null)
+        {
+            GameObject ropeOriginObject = new GameObject("RopeOrigin");
+            ropeOriginObject.transform.SetParent(holder != null ? holder : player.transform, false);
+            ropeOriginObject.transform.localPosition = new Vector3(0.35f, -0.25f, 0.25f);
+            ropeOrigin = ropeOriginObject.transform;
+        }
+
+        SetPrivate(rope, "player", player.transform);
+        SetPrivate(rope, "playerRb", rb);
+        SetPrivate(rope, "ropeOrigin", ropeOrigin);
+        if (cam != null) SetPrivate(rope, "cameraTransform", cam.transform);
+        SetPrivate(rope, "ropeLine", line);
+        SetPrivate(rope, "collisionTracker", tracker);
+        SetPrivate(rope, "ropeCollisionMask", BuildWorldGeometryMask());
+        SetPrivate(rope, "visualRopeWidth", 0.018f);
+        SetPrivate(rope, "showPhysicalSegmentRenderers", false);
+        SetPrivate(rope, "physicalSegmentLength", 0.4f);
+        SetPrivate(rope, "physicalSegmentRadius", 0.085f);
+        SetPrivate(rope, "maxPhysicalSegments", 90);
+
+        FirstPersonController movement = player.GetComponent<FirstPersonController>();
+        if (movement != null) SetPrivate(movement, "ropeController", rope);
+        PlayerLedgeMountAssist ledgeAssist = player.GetComponent<PlayerLedgeMountAssist>();
+        if (ledgeAssist == null) ledgeAssist = player.AddComponent<PlayerLedgeMountAssist>();
+        SetPrivate(rope, "ledgeMountAssist", ledgeAssist);
+
+        HookEdgeDetector edgeDetector = player.GetComponent<HookEdgeDetector>();
+        if (edgeDetector == null) edgeDetector = player.AddComponent<HookEdgeDetector>();
+        HookAttachValidator attachValidator = player.GetComponent<HookAttachValidator>();
+        if (attachValidator == null) attachValidator = player.AddComponent<HookAttachValidator>();
+
+        GrapplingHookController hook = player.GetComponent<GrapplingHookController>();
+        if (hook == null) hook = player.AddComponent<GrapplingHookController>();
+        if (hookPrefab != null) SetPrivate(hook, "hookPrefab", hookPrefab.GetComponent<HookProjectile>());
+        if (cam != null) SetPrivate(hook, "cameraTransform", cam.transform);
+        SetPrivate(hook, "ropeOrigin", ropeOrigin);
+        SetPrivate(hook, "ropeController", rope);
+        SetPrivate(hook, "edgeDetector", edgeDetector);
+        SetPrivate(hook, "attachValidator", attachValidator);
+        SetPrivate(hook, "ropeCollisionTracker", tracker);
+        SetPrivate(hook, "grappleMask", BuildWorldGeometryMask());
+        SetPrivate(hook, "ropeCollisionMask", BuildWorldGeometryMask());
     }
 
     GameObject CreateLevelSystem(Transform player)
@@ -343,6 +425,7 @@ public class PrototypeSceneBootstrapper : MonoBehaviour
         }
         platform.transform.position = new Vector3(SideStartPosition.x, 0f, SideStartPosition.z);
         platform.transform.localScale = new Vector3(16f, 2f, 16f);
+        PrepareGrappleGeometry(platform);
 
         Renderer renderer = platform.GetComponent<Renderer>();
         if (renderer != null && stoneMaterial != null) renderer.sharedMaterial = stoneMaterial;
@@ -360,5 +443,69 @@ public class PrototypeSceneBootstrapper : MonoBehaviour
 
         Renderer pointRenderer = point.GetComponent<Renderer>();
         if (pointRenderer != null && grappleMaterial != null) pointRenderer.sharedMaterial = grappleMaterial;
+    }
+
+    void PrepareGrappleGeometry(GameObject go)
+    {
+        if (go == null) return;
+        SetLayerIfExists(go, "GrappleGeometry", "GrappleSurface");
+        if (go.GetComponent<GrappleSurface>() == null) go.AddComponent<GrappleSurface>();
+        if (go.GetComponent<RopeCollisionWrapper>() == null) go.AddComponent<RopeCollisionWrapper>();
+    }
+
+    void SetLayerIfExists(GameObject go, params string[] layerNames)
+    {
+        if (go == null || layerNames == null) return;
+        for (int i = 0; i < layerNames.Length; i++)
+        {
+            int layer = LayerMask.NameToLayer(layerNames[i]);
+            if (layer < 0) continue;
+            go.layer = layer;
+            return;
+        }
+    }
+
+    LayerMask BuildMask(params string[] layerNames)
+    {
+        int mask = 0;
+        for (int i = 0; i < layerNames.Length; i++)
+        {
+            int layer = LayerMask.NameToLayer(layerNames[i]);
+            if (layer >= 0) mask |= 1 << layer;
+        }
+
+        return mask == 0 ? ~0 : mask;
+    }
+
+    LayerMask BuildWorldGeometryMask()
+    {
+        int mask = ~0;
+        RemoveLayerFromMask(ref mask, "Player");
+        RemoveLayerFromMask(ref mask, "Hook");
+        RemoveLayerFromMask(ref mask, "Rope");
+        RemoveLayerFromMask(ref mask, "IgnoreRopeSelfCollision");
+        return mask;
+    }
+
+    void RemoveLayerFromMask(ref int mask, string layerName)
+    {
+        int layer = LayerMask.NameToLayer(layerName);
+        if (layer >= 0) mask &= ~(1 << layer);
+    }
+
+    void ConfigurePhysicsCollisionMatrix()
+    {
+        IgnoreLayerPair("Hook", "Player", true);
+        IgnoreLayerPair("Rope", "Player", true);
+        IgnoreLayerPair("Rope", "Rope", true);
+        IgnoreLayerPair("Hook", "Rope", true);
+    }
+
+    void IgnoreLayerPair(string a, string b, bool ignore)
+    {
+        int layerA = LayerMask.NameToLayer(a);
+        int layerB = LayerMask.NameToLayer(b);
+        if (layerA < 0 || layerB < 0) return;
+        Physics.IgnoreLayerCollision(layerA, layerB, ignore);
     }
 }

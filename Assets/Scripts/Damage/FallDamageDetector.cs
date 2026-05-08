@@ -4,9 +4,9 @@ using UnityEngine;
 public class FallDamageDetector : MonoBehaviour
 {
     [SerializeField] PlayerDamageController damageController;
-    [SerializeField] float safeFallSpeed = 18f;
-    [SerializeField] float lethalFallSpeed = 45f;
-    [SerializeField] float maxFallDamage = 12f;
+    [SerializeField] float safeFallSpeed = 11f;
+    [SerializeField] float lethalFallSpeed = 25f;
+    [SerializeField] float maxFallDamage = 100f;
     [SerializeField] LayerMask groundMask = ~0;
 
     Rigidbody rb;

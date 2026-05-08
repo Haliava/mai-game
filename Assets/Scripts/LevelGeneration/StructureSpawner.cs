@@ -14,6 +14,30 @@ public class StructureSpawner : MonoBehaviour
         GameObject instance = Instantiate(prefab, position, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f), parent);
         float scale = Random.Range(scaleRange.x, scaleRange.y);
         instance.transform.localScale *= scale;
+        PrepareGrappleGeometry(instance);
         return instance;
+    }
+
+    void PrepareGrappleGeometry(GameObject root)
+    {
+        Collider[] colliders = root.GetComponentsInChildren<Collider>();
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            GameObject go = colliders[i].gameObject;
+            SetLayerIfExists(go, "GrappleGeometry", "GrappleSurface");
+            if (go.GetComponent<GrappleSurface>() == null) go.AddComponent<GrappleSurface>();
+            if (go.GetComponent<RopeCollisionWrapper>() == null) go.AddComponent<RopeCollisionWrapper>();
+        }
+    }
+
+    void SetLayerIfExists(GameObject go, params string[] layerNames)
+    {
+        for (int i = 0; i < layerNames.Length; i++)
+        {
+            int layer = LayerMask.NameToLayer(layerNames[i]);
+            if (layer < 0) continue;
+            go.layer = layer;
+            return;
+        }
     }
 }

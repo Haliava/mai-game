@@ -4,6 +4,7 @@ using System.Reflection;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
+#pragma warning disable 414
 public sealed class EndlessDescentGameManager : MonoBehaviour
 {
     public static EndlessDescentGameManager Instance { get; private set; }
@@ -275,15 +276,13 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
 
         Debug.Log($"EndlessDescent: completedBaseY={completedBaseY}, nextBaseY={nextBaseY}, nextIndex={nextIndex}");
 
-        // compute completed bounds and detect final arena BEFORE we remove it
+        // compute completed bounds for diagnostics (do not treat as authoritative)
         Bounds completedBounds = new Bounds(completedLevelRoot != null ? completedLevelRoot.transform.position : Vector3.zero, Vector3.one);
-        bool haveCompletedBounds = false;
         if (completedLevelRoot != null)
         {
             if (TryCalculateLevelBounds(completedLevelRoot, out Bounds cb))
             {
                 completedBounds = cb;
-                haveCompletedBounds = true;
             }
             else
             {
@@ -291,52 +290,29 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
                 if (lr != null)
                 {
                     completedBounds = lr.LevelBounds;
-                    haveCompletedBounds = true;
                 }
             }
         }
 
+        // detect final arena root for potential later removal (do NOT delete now)
         GameObject finalArenaRoot = null;
-        float finalArenaBottomY = float.NaN;
         if (completedLevelRoot != null)
         {
             finalArenaRoot = FindFinalArenaRoot(completedLevelRoot);
             if (finalArenaRoot != null)
             {
-                if (TryCalculateLevelBounds(finalArenaRoot, out Bounds fab))
-                {
-                    finalArenaBottomY = fab.min.y;
-                }
+                Debug.Log($"EndlessDescent: found final arena '{finalArenaRoot.name}' (deletion deferred until new level validated)");
+            }
+            else
+            {
+                Debug.Log("EndlessDescent: no explicit final arena found (will attempt to remove pedestal/sphere after alignment)");
             }
         }
 
-        // choose the old bottom Y (prefer the final arena bottom if present)
-        float oldBottomY = haveCompletedBounds ? completedBounds.min.y : completedBaseY;
-        if (!float.IsNaN(finalArenaBottomY)) oldBottomY = finalArenaBottomY;
-        Debug.Log($"EndlessDescent: computed completedBounds.min={completedBounds.min}, finalArenaBottomY={(float.IsNaN(finalArenaBottomY)?float.NaN:finalArenaBottomY)}, chosenOldBottomY={oldBottomY}");
-
-        // Immediately remove final arena (pedestal + sphere + bottom) so player will fall into the shaft
-        if (finalArenaRoot != null)
-        {
-            Debug.Log($"EndlessDescent: destroying final arena '{finalArenaRoot.name}' immediately on sphere touch.");
-            if (Application.isPlaying) Destroy(finalArenaRoot);
-            else DestroyImmediate(finalArenaRoot);
-        }
-        else if (source != null && completedLevelRoot != null)
-        {
-            // fallback: destroy highest ancestor of the source that is still a child of completedLevelRoot
-            Transform cur = source.transform;
-            while (cur.parent != null && cur.parent.gameObject != completedLevelRoot)
-            {
-                cur = cur.parent;
-            }
-            if (cur != null && cur.gameObject != null && cur.gameObject != completedLevelRoot)
-            {
-                Debug.Log($"EndlessDescent: fallback destroying ancestor '{cur.gameObject.name}' of source to remove pedestal.");
-                if (Application.isPlaying) Destroy(cur.gameObject);
-                else DestroyImmediate(cur.gameObject);
-            }
-        }
+        // compute exit position from source (do NOT delete final arena yet)
+        Vector3 oldExitPosition = GetLevelExitPosition(source, completedLevelRoot);
+        float oldExitY = oldExitPosition.y;
+        Debug.Log($"EndlessDescent: source/exit position = {oldExitPosition} (oldExitY={oldExitY:F2})");
         // destroy the sphere object itself if present
         if (source != null && source.gameObject != null)
         {
@@ -408,16 +384,34 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
             DeleteUpperHalfOfCompletedLevel(completedLevelRoot.GetComponent<LevelInstanceRoot>(), completedBounds);
         }
 
-        // align next level under the old bottom
-        float desiredNextTopY = oldBottomY - verticalGapBetweenLevels;
-        float deltaY = desiredNextTopY - boundsBefore.max.y;
+        // align next level using explicit EntryAnchor -> ExitAnchor anchors (avoid using global bounds)
+        var entryT = EnsureLevelEntryAnchor(newRoot);
+        if (entryT == null)
+        {
+            Debug.LogError($"EndlessDescent: no EntryAnchor found on new level '{newRoot.name}'. Aborting transition.");
+            if (source != null)
+            {
+                var col = source.GetComponent<Collider>(); if (col != null) col.enabled = true;
+            }
+            state = RunState.Playing;
+            yield break;
+        }
+
+        Debug.Log($"EndlessDescent: Level '{newRoot.name}' EntryAnchor before alignment = {entryT.position}");
+
+        float desiredEntryY = oldExitPosition.y - verticalGapBetweenLevels;
+        float deltaY = desiredEntryY - entryT.position.y;
         newRoot.transform.position += Vector3.up * deltaY;
-        Debug.Log($"EndlessDescent: desiredNextTopY={desiredNextTopY:F2}, applied deltaY={deltaY:F2} to '{newRoot.name}'");
+        Debug.Log($"EndlessDescent: desiredEntryY={desiredEntryY:F2}, applied deltaY={deltaY:F2} to '{newRoot.name}'");
 
-        // recalc bounds after alignment
-        if (!TryCalculateLevelBounds(newRoot, out Bounds boundsAfter))
+        // update entry anchor reference after move
+        entryT = EnsureLevelEntryAnchor(newRoot);
+        float actualGap = oldExitPosition.y - entryT.position.y;
+        Debug.Log($"EndlessDescent: Level '{newRoot.name}' EntryAnchor after alignment = {entryT.position}; transition gap = {actualGap:F2}");
+
+        if (Mathf.Abs(actualGap - verticalGapBetweenLevels) > maxAllowedLevelAlignmentError)
         {
-            Debug.LogError($"EndlessDescent: failed to recalc bounds for '{newRoot.name}' after alignment. Aborting transition.");
+            Debug.LogError($"EndlessDescent: alignment gap too large: actualGap={actualGap:F2}, expected~{verticalGapBetweenLevels:F2}");
             if (source != null)
             {
                 var col = source.GetComponent<Collider>(); if (col != null) col.enabled = true;
@@ -426,29 +420,16 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
             yield break;
         }
 
-        Debug.Log($"EndlessDescent: '{newRoot.name}' bounds after alignment min={boundsAfter.min}, max={boundsAfter.max}, center={boundsAfter.center}");
-
-        // update levelComp cached bounds
-        if (newLevelComp != null)
+        // recalc bounds for diagnostics and caching (do not use for alignment decisions)
+        if (TryCalculateLevelBounds(newRoot, out Bounds boundsAfter))
         {
-            newLevelComp.LevelBounds = boundsAfter;
-            newLevelComp.TopY = boundsAfter.max.y;
-        }
-
-        // validate alignment
-        if (!(boundsAfter.max.y < oldBottomY))
-        {
-            Debug.LogError($"EndlessDescent: alignment failed: next top {boundsAfter.max.y} is not below old bottom {oldBottomY}");
-            if (source != null)
+            Debug.Log($"EndlessDescent: '{newRoot.name}' bounds after alignment min={boundsAfter.min}, max={boundsAfter.max}, center={boundsAfter.center}");
+            if (newLevelComp != null)
             {
-                var col = source.GetComponent<Collider>(); if (col != null) col.enabled = true;
+                newLevelComp.LevelBounds = boundsAfter;
+                newLevelComp.TopY = boundsAfter.max.y;
             }
-            state = RunState.Playing;
-            yield break;
         }
-
-        float actualGap = oldBottomY - boundsAfter.max.y;
-        Debug.Log($"EndlessDescent: gap between old bottom and next top = {actualGap:F2} (expected {verticalGapBetweenLevels:F2})");
 
         // validate first landing surface below the player in the new level
         bool landingOk = true;
@@ -457,7 +438,7 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
         float landingDrop = 0f;
         if (ensureFirstLandingPlatform && playerTransform != null)
         {
-            if (!TryFindFirstLandingSurfaceBelowPlayer(newRoot, playerTransform.position, boundsAfter, out landingPoint, out landingCollider, out landingDrop))
+            if (!TryFindFirstLandingSurfaceBelowPlayer(newRoot, playerTransform.position, out landingPoint, out landingCollider, out landingDrop))
             {
                 Debug.LogWarning($"EndlessDescent: no first landing platform found under player within {firstLandingMaxDrop}m in new level '{newRoot.name}'");
                 if (addEmergencyLandingPlatformIfMissing)
@@ -506,7 +487,24 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
             }
         }
 
-        // final arena was removed earlier (immediate removal on sphere touch)
+        // remove completed final arena / pedestal / sphere now that new level is validated and aligned
+        if (completedLevelRoot != null)
+        {
+            try
+            {
+                RemoveCompletedFinalArena(completedLevelRoot.GetComponent<LevelInstanceRoot>());
+                Debug.Log($"EndlessDescent: removed completed final arena from '{completedLevelRoot.name}'");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"EndlessDescent: failed to remove final arena cleanly: {ex}");
+            }
+        }
+        // ensure sphere object itself is also destroyed if still present
+        if (source != null && source.gameObject != null)
+        {
+            try { if (Application.isPlaying) Destroy(source.gameObject); else DestroyImmediate(source.gameObject); } catch { }
+        }
 
         // ensure grapple is released so player falls cleanly
         if (cancelActiveGrappleOnLevelTransition && playerTransform != null)
@@ -701,7 +699,54 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
                 }
             }
         }
+        // ensure transition anchors exist on generated level
+        var anchorsComp = root.GetComponent<LevelTransitionAnchors>();
+        if (anchorsComp == null) anchorsComp = root.AddComponent<LevelTransitionAnchors>();
 
+        // try to find an existing EntryAnchor child
+        Transform foundEntry = null;
+        foreach (var t in root.GetComponentsInChildren<Transform>(true))
+        {
+            if (t == null) continue;
+            if (t.name.Equals("Level Entry Anchor", StringComparison.OrdinalIgnoreCase))
+            {
+                foundEntry = t; break;
+            }
+        }
+
+        if (foundEntry == null)
+        {
+            Vector3 entryPos;
+            if (hasBounds)
+            {
+                entryPos = new Vector3(totalBounds.center.x, totalBounds.max.y - entryPointDownOffset, totalBounds.center.z);
+            }
+            else
+            {
+                entryPos = root.transform.position + Vector3.up * Mathf.Max(10f, levelHeight * 0.6f);
+            }
+            GameObject ep = new GameObject("Level Entry Anchor");
+            ep.transform.SetParent(root.transform, true);
+            ep.transform.position = entryPos;
+            anchorsComp.EntryAnchor = ep.transform;
+            if (levelComp != null) levelComp.EntryPoint = ep.transform;
+            Debug.Log($"EndlessDescent: created EntryAnchor at {entryPos} for '{root.name}'");
+        }
+        else
+        {
+            anchorsComp.EntryAnchor = foundEntry;
+            if (levelComp != null && levelComp.EntryPoint == null) levelComp.EntryPoint = foundEntry;
+            Debug.Log($"EndlessDescent: found existing EntryAnchor '{foundEntry.name}' for '{root.name}' at {foundEntry.position}");
+        }
+
+        // find DescentSphereTrigger in this level to assign ExitAnchor if present
+        var ds = root.GetComponentInChildren<DescentSphereTrigger>(true);
+        if (ds != null)
+        {
+            anchorsComp.ExitAnchor = ds.transform;
+            anchorsComp.FinalArenaRoot = FindFinalArenaRoot(root)?.transform;
+            Debug.Log($"EndlessDescent: assigned ExitAnchor from DescentSphereTrigger '{ds.gameObject.name}' for '{root.name}'");
+        }
 
         levelRoots.Add(root);
         Debug.Log($"EndlessDescent: generated level root '{root.name}' at Y={baseY}");
@@ -1310,7 +1355,7 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
         }
     }
 
-    private bool TryFindFirstLandingSurfaceBelowPlayer(GameObject nextLevelRoot, Vector3 playerPosition, Bounds nextBounds, out Vector3 landingPoint, out Collider landingCollider, out float dropDistance)
+    private bool TryFindFirstLandingSurfaceBelowPlayer(GameObject nextLevelRoot, Vector3 playerPosition, out Vector3 landingPoint, out Collider landingCollider, out float dropDistance)
     {
         landingPoint = Vector3.zero; landingCollider = null; dropDistance = 0f;
         if (nextLevelRoot == null) return false;
@@ -1320,7 +1365,7 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
         Vector3 origin = new Vector3(playerPosition.x, playerPosition.y - 0.1f, playerPosition.z);
         if (Physics.Raycast(origin, Vector3.down, out hit, firstLandingMaxDrop, firstLandingLayerMask, QueryTriggerInteraction.Ignore))
         {
-            if (hit.collider != null && hit.collider.transform.IsChildOf(nextLevelRoot.transform) && nextBounds.Contains(hit.point))
+            if (hit.collider != null && hit.collider.transform.IsChildOf(nextLevelRoot.transform))
             {
                 landingPoint = hit.point; landingCollider = hit.collider; dropDistance = playerPosition.y - hit.point.y; return true;
             }
@@ -1339,7 +1384,7 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
                 Vector3 sOrigin = new Vector3(sampleXZ.x, playerPosition.y + 1f, sampleXZ.z);
                 if (Physics.Raycast(sOrigin, Vector3.down, out hit, firstLandingMaxDrop + 2f, firstLandingLayerMask, QueryTriggerInteraction.Ignore))
                 {
-                    if (hit.collider != null && hit.collider.transform.IsChildOf(nextLevelRoot.transform) && nextBounds.Contains(hit.point))
+                    if (hit.collider != null && hit.collider.transform.IsChildOf(nextLevelRoot.transform))
                     {
                         landingPoint = hit.point; landingCollider = hit.collider; dropDistance = playerPosition.y - hit.point.y;
                         if (dropDistance <= firstLandingMaxDrop) return true;
@@ -1411,6 +1456,87 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
             if (Application.isPlaying) Destroy(r);
             else DestroyImmediate(r);
         }
+    }
+
+    private Vector3 GetLevelExitPosition(DescentSphereTrigger source, GameObject completedLevelRoot)
+    {
+        if (source != null) return source.transform.position;
+        if (completedLevelRoot != null)
+        {
+            var anchors = completedLevelRoot.GetComponent<LevelTransitionAnchors>();
+            if (anchors != null && anchors.ExitAnchor != null) return anchors.ExitAnchor.position;
+            var trig = completedLevelRoot.GetComponentInChildren<DescentSphereTrigger>(true);
+            if (trig != null) return trig.transform.position;
+            var final = FindFinalArenaRoot(completedLevelRoot);
+            if (final != null) return final.transform.position;
+            return completedLevelRoot.transform.position;
+        }
+        if (playerTransform != null) return playerTransform.position;
+        return Vector3.zero;
+    }
+
+    private Transform EnsureLevelEntryAnchor(GameObject levelRoot)
+    {
+        if (levelRoot == null) return null;
+        var anchors = levelRoot.GetComponent<LevelTransitionAnchors>();
+        if (anchors == null) anchors = levelRoot.AddComponent<LevelTransitionAnchors>();
+        if (anchors.EntryAnchor != null) return anchors.EntryAnchor;
+
+        // try to find named child
+        foreach (var t in levelRoot.GetComponentsInChildren<Transform>(true))
+        {
+            if (t == null) continue;
+            if (t.name.Equals("Level Entry Anchor", StringComparison.OrdinalIgnoreCase))
+            {
+                anchors.EntryAnchor = t;
+                var lr = levelRoot.GetComponent<LevelInstanceRoot>();
+                if (lr != null && lr.EntryPoint == null) lr.EntryPoint = t;
+                return t;
+            }
+        }
+
+        // heuristic: choose top-most non-boundary renderer/collider as anchor
+        float bestY = float.NegativeInfinity;
+        Vector3 center = levelRoot.transform.position;
+        var rends = levelRoot.GetComponentsInChildren<Renderer>(true);
+        foreach (var r in rends)
+        {
+            if (r == null) continue;
+            string n = r.gameObject.name;
+            if (n.IndexOf("Boundary", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+            if (n.IndexOf("Shaft", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+            if (n.IndexOf("Wall", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+            if (r.bounds.max.y > bestY)
+            {
+                bestY = r.bounds.max.y;
+                center = r.bounds.center;
+            }
+        }
+
+        if (bestY == float.NegativeInfinity)
+        {
+            // fallback to LevelInstanceRoot bounds or root position
+            var lr = levelRoot.GetComponent<LevelInstanceRoot>();
+            if (lr != null && lr.LevelBounds.size != Vector3.zero)
+            {
+                bestY = lr.LevelBounds.max.y;
+                center = lr.LevelBounds.center;
+            }
+            else
+            {
+                bestY = levelRoot.transform.position.y + Mathf.Max(10f, levelHeight * 0.6f);
+            }
+        }
+
+        Vector3 entryPos = new Vector3(center.x, bestY - entryPointDownOffset, center.z);
+        GameObject ep = new GameObject("Level Entry Anchor");
+        ep.transform.SetParent(levelRoot.transform, true);
+        ep.transform.position = entryPos;
+        anchors.EntryAnchor = ep.transform;
+        var lr2 = levelRoot.GetComponent<LevelInstanceRoot>();
+        if (lr2 != null) lr2.EntryPoint = ep.transform;
+        Debug.Log($"EndlessDescent: created fallback EntryAnchor at {entryPos} for '{levelRoot.name}'");
+        return ep.transform;
     }
 
     private void CleanupOldLevels()
@@ -1490,3 +1616,5 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
         EndRunResultsUI.EnsureInScene()?.ShowResults(completedLevels, (int)GetDescentMeters());
     }
 }
+
+#pragma warning restore 414

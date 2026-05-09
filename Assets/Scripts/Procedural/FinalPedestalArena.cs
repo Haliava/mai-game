@@ -85,6 +85,11 @@ public static class FinalPedestalArena
         light.intensity = 3.5f;
         light.range = 9f;
 
+        // explicit exit anchor for manager alignment (placed at the victory sphere position)
+        GameObject exitAnchor = new("Level Exit Anchor");
+        exitAnchor.transform.SetParent(root.transform, false);
+        exitAnchor.transform.position = sphere.transform.position;
+
         return root;
     }
 

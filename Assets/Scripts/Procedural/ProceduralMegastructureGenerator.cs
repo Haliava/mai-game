@@ -244,6 +244,168 @@ public sealed class ProceduralMegastructureGenerator : MonoBehaviour
         Debug.Log(BuildSummary("Generated"), this);
     }
 
+    /// <summary>
+    /// Runtime generation API for endless mode. Produces an independent per-level root named "Level_{index}"
+    /// under the provided parent and returns the LevelInstanceRoot component attached to it.
+    /// This method does NOT clear or destroy any existing generated roots and is safe for streaming runtime use.
+    /// </summary>
+    public LevelInstanceRoot GenerateLevelInstance(int levelIndex, float baseY, int seed, Transform parent)
+    {
+        ApplySettingsAsset();
+
+        // deterministically seed rng for this instance
+        System.Random rng = new(seed);
+        ResetStats();
+        EnsureFallbackMaterials();
+
+        int grappleLayer = ResolveLayer(grappleSurfaceLayerName, LayerMask.NameToLayer(GrappleSurfaceLayerName));
+        int boundaryLayer = ResolveLayer(boundaryLayerName, 0);
+
+        string rootName = $"Level_{levelIndex}";
+        GameObject root = new(rootName);
+        // parent the root (preserve world positions)
+        if (parent != null) root.transform.SetParent(parent, true);
+        root.transform.position = new Vector3(0f, baseY, 0f);
+
+        Transform shaftRoot = CreateChildRoot(root.transform, "Shaft Boundary");
+        Transform chunkRoot = CreateChildRoot(root.transform, "Sparse Ruin Chunks");
+        Transform criticalRoot = CreateChildRoot(root.transform, "Critical Descent Supports");
+        lastEmergencyRoot = CreateChildRoot(root.transform, "Emergency Grapple Ledges");
+        Transform finalRoot = CreateChildRoot(root.transform, "Final Arena");
+
+        CreateShaftBoundary(shaftRoot, boundaryLayer, rng);
+        GenerateChunks(chunkRoot, criticalRoot, rng, grappleLayer);
+        ValidateAndPatchGrappleOpportunities(lastEmergencyRoot, rng, grappleLayer);
+        CreateFinalArena(finalRoot, grappleLayer);
+
+        ValidateLevel();
+        Debug.Log(BuildSummary("GeneratedInstance"), this);
+
+        // compute bounds of generated level
+        Bounds totalBounds = new Bounds(root.transform.position, Vector3.zero);
+        bool hasBounds = false;
+        var rends = root.GetComponentsInChildren<Renderer>(true);
+        if (rends != null && rends.Length > 0)
+        {
+            foreach (var r in rends)
+            {
+                if (r == null) continue;
+                if (!hasBounds)
+                {
+                    totalBounds = r.bounds;
+                    hasBounds = true;
+                }
+                else totalBounds.Encapsulate(r.bounds);
+            }
+        }
+        if (!hasBounds)
+        {
+            var cols = root.GetComponentsInChildren<Collider>(true);
+            if (cols != null && cols.Length > 0)
+            {
+                foreach (var c in cols)
+                {
+                    if (c == null) continue;
+                    if (!hasBounds)
+                    {
+                        totalBounds = c.bounds;
+                        hasBounds = true;
+                    }
+                    else totalBounds.Encapsulate(c.bounds);
+                }
+            }
+        }
+
+        var levelComp = root.AddComponent<LevelInstanceRoot>();
+        levelComp.LevelIndex = levelIndex;
+        levelComp.BaseY = baseY;
+        if (hasBounds)
+        {
+            levelComp.LevelBounds = totalBounds;
+            levelComp.TopY = totalBounds.max.y;
+            levelComp.GameplayBounds = totalBounds;
+        }
+
+        // attach a LevelTransitionAnchors container and populate anchors
+        var anchorsComp = root.AddComponent<LevelTransitionAnchors>();
+
+        // create or find an entry anchor (top-most point)
+        Transform foundEntry = null;
+        foreach (var t in root.GetComponentsInChildren<Transform>(true))
+        {
+            if (t == null) continue;
+            if (t.name.Equals("Level Entry Anchor", System.StringComparison.OrdinalIgnoreCase))
+            {
+                foundEntry = t; break;
+            }
+        }
+
+        if (foundEntry == null)
+        {
+            Vector3 entryPos;
+            if (hasBounds)
+            {
+                entryPos = new Vector3(totalBounds.center.x, totalBounds.max.y - 2f, totalBounds.center.z);
+            }
+            else
+            {
+                entryPos = root.transform.position + Vector3.up * Mathf.Max(10f, levelHeight * 0.6f);
+            }
+            GameObject ep = new GameObject("Level Entry Anchor");
+            ep.transform.SetParent(root.transform, true);
+            ep.transform.position = entryPos;
+            anchorsComp.EntryAnchor = ep.transform;
+            levelComp.EntryPoint = ep.transform;
+            levelComp.EntryAnchor = ep.transform;
+            Debug.Log($"ProceduralMegastructureGenerator: created EntryAnchor at {entryPos} for '{root.name}'", this);
+        }
+        else
+        {
+            anchorsComp.EntryAnchor = foundEntry;
+            if (levelComp.EntryPoint == null) levelComp.EntryPoint = foundEntry;
+            levelComp.EntryAnchor = foundEntry;
+            Debug.Log($"ProceduralMegastructureGenerator: found existing EntryAnchor '{foundEntry.name}' for '{root.name}' at {foundEntry.position}", this);
+        }
+
+        // find DescentSphereTrigger in this level to assign ExitAnchor if present
+        var ds = root.GetComponentInChildren<DescentSphereTrigger>(true);
+        if (ds != null)
+        {
+            anchorsComp.ExitAnchor = ds.transform;
+            anchorsComp.FinalArenaRoot = finalRoot;
+            levelComp.ExitAnchor = ds.transform;
+            levelComp.FinalArenaRoot = finalRoot;
+            Debug.Log($"ProceduralMegastructureGenerator: assigned ExitAnchor from DescentSphereTrigger '{ds.gameObject.name}' for '{root.name}'", this);
+        }
+
+        // create a modest set of centipede spawn anchors from wall/structure anchors populated during generation
+        levelComp.CentipedeSpawnAnchors = new List<Transform>();
+        int spawnIndex = 0;
+        int maxAnchors = 24;
+        for (int i = 0; i < wallAnchors.Count && spawnIndex < maxAnchors; i++)
+        {
+            var a = wallAnchors[i];
+            GameObject g = new($"Centipede Spawn Anchor {spawnIndex:00}");
+            g.transform.SetParent(root.transform, true);
+            g.transform.position = a.Position;
+            if (a.Normal.sqrMagnitude > 0.0001f) g.transform.up = a.Normal;
+            levelComp.CentipedeSpawnAnchors.Add(g.transform);
+            spawnIndex++;
+        }
+        for (int i = 0; i < structureAnchors.Count && spawnIndex < maxAnchors; i++)
+        {
+            var a = structureAnchors[i];
+            GameObject g = new($"Centipede Spawn Anchor {spawnIndex:00}");
+            g.transform.SetParent(root.transform, true);
+            g.transform.position = a.Position;
+            if (a.Normal.sqrMagnitude > 0.0001f) g.transform.up = a.Normal;
+            levelComp.CentipedeSpawnAnchors.Add(g.transform);
+            spawnIndex++;
+        }
+
+        return levelComp;
+    }
+
     [ContextMenu("Clear Generated Level")]
     public void ClearGeneratedLevel()
     {

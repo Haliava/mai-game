@@ -294,7 +294,6 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
             }
         }
 
-        // detect final arena root for potential later removal (do NOT delete now)
         GameObject finalArenaRoot = null;
         if (completedLevelRoot != null)
         {
@@ -307,9 +306,29 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
             {
                 Debug.Log("EndlessDescent: no explicit final arena found (will attempt to remove pedestal/sphere after alignment)");
             }
+
+            Transform shaftBottomT = completedLevelRoot.transform.Find("Shaft Boundary/Shaft Bottom Floor");
+            if (shaftBottomT != null)
+            {
+                Debug.Log($"EndlessDescent: destroying Shaft Bottom Floor '{shaftBottomT.name}' in '{completedLevelRoot.name}'");
+                if (Application.isPlaying) Destroy(shaftBottomT.gameObject); else DestroyImmediate(shaftBottomT.gameObject);
+            }
+            else
+            {
+                var allChildren = completedLevelRoot.GetComponentsInChildren<Transform>(true);
+                foreach (var tr in allChildren)
+                {
+                    if (tr == null) continue;
+                    if (tr.name.Equals("Shaft Bottom Floor", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Debug.Log($"EndlessDescent: destroying Shaft Bottom Floor '{tr.name}' found under '{completedLevelRoot.name}'");
+                        if (Application.isPlaying) Destroy(tr.gameObject); else DestroyImmediate(tr.gameObject);
+                        break;
+                    }
+                }
+            }
         }
 
-        // compute exit position from source (do NOT delete final arena yet)
         Vector3 oldExitPosition = GetLevelExitPosition(source, completedLevelRoot);
         float oldExitY = oldExitPosition.y;
         Debug.Log($"EndlessDescent: source/exit position = {oldExitPosition} (oldExitY={oldExitY:F2})");
@@ -556,189 +575,67 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
 
         Debug.Log($"EndlessDescent: found ProceduralMegastructureGenerator on {generator.gameObject.name}");
 
-        // set private fields via reflection
-        Type genType = typeof(ProceduralMegastructureGenerator);
-        FieldInfo seedField = genType.GetField("seed", BindingFlags.Instance | BindingFlags.NonPublic);
-        FieldInfo randomizeField = genType.GetField("randomizeSeed", BindingFlags.Instance | BindingFlags.NonPublic);
-        FieldInfo clearBeforeGenerateField = genType.GetField("clearBeforeGenerate", BindingFlags.Instance | BindingFlags.NonPublic);
-
-        Debug.Log($"EndlessDescent: reflection fields seedField={(seedField!=null)}, randomizeField={(randomizeField!=null)}, clearBeforeGenerateField={(clearBeforeGenerateField!=null)}");
-
-        object prevSeed = null;
-        object prevRandomize = null;
-        if (seedField != null)
-        {
-            prevSeed = seedField.GetValue(generator);
-            seedField.SetValue(generator, seed);
-            Debug.Log($"EndlessDescent: set generator.seed={seed} (prev={prevSeed})");
-        }
-        if (randomizeField != null)
-        {
-            prevRandomize = randomizeField.GetValue(generator);
-            randomizeField.SetValue(generator, false);
-            Debug.Log($"EndlessDescent: set generator.randomizeSeed=false (prev={prevRandomize})");
-        }
-        if (clearBeforeGenerateField != null)
-        {
-            clearBeforeGenerateField.SetValue(generator, true);
-            Debug.Log("EndlessDescent: set generator.clearBeforeGenerate=true");
-        }
-
-        // generate
-        Debug.Log("EndlessDescent: invoking generator.GenerateLevel()");
+        LevelInstanceRoot newLevelComp = null;
         try
         {
-            generator.GenerateLevel();
-            Debug.Log("EndlessDescent: generator.GenerateLevel() completed");
+            newLevelComp = generator.GenerateLevelInstance(levelIndex, baseY, seed, levelsParent);
         }
         catch (Exception ex)
         {
-            Debug.LogError($"EndlessDescent: generator threw exception: {ex}");
-        }
-
-        // restore fields
-        if (seedField != null) seedField.SetValue(generator, prevSeed);
-        if (randomizeField != null) randomizeField.SetValue(generator, prevRandomize);
-
-        // find produced root and rename/move it
-        GameObject root = GameObject.Find("GeneratedLevel");
-        if (root == null)
-        {
-            Debug.LogError("EndlessDescent: generated root not found after generation. Listing root objects for diagnosis:");
-            var roots = SceneManager.GetActiveScene().GetRootGameObjects();
-            foreach (var r in roots)
-            {
-                if (r == null) continue;
-                if (r.name.Contains("Level") || r.name.Contains("Generated") || r.name.Contains("generated"))
-                {
-                    Debug.Log($" - root: {r.name} (pos={r.transform.position})");
-                }
-            }
+            Debug.LogError($"EndlessDescent: generator.GenerateLevelInstance threw exception: {ex}");
             return null;
         }
 
-        root.name = $"Level_{levelIndex}";
-        root.transform.SetParent(levelsParent != null ? levelsParent : null, true);
-        root.transform.position = new Vector3(0f, baseY, 0f);
-
-        var levelComp = root.AddComponent<LevelInstanceRoot>();
-        levelComp.LevelIndex = levelIndex;
-        levelComp.BaseY = baseY;
-
-        // compute bounds of generated level to ensure it's placed below player and not overlapping
-        Bounds totalBounds = new Bounds(root.transform.position, Vector3.zero);
-        bool hasBounds = false;
-        var rends = root.GetComponentsInChildren<Renderer>(true);
-        if (rends != null && rends.Length > 0)
+        if (newLevelComp == null)
         {
-            foreach (var r in rends)
-            {
-                if (r == null) continue;
-                if (!hasBounds)
-                {
-                    totalBounds = r.bounds;
-                    hasBounds = true;
-                }
-                else totalBounds.Encapsulate(r.bounds);
-            }
+            Debug.LogError("EndlessDescent: generator returned null for GenerateLevelInstance.");
+            return null;
         }
-        if (!hasBounds)
+
+        GameObject root = newLevelComp.gameObject;
+
+        // optionally adjust position so top is below player (preserve compatibility with previous behavior)
+        if (autoShiftByPlayer && playerTransform != null)
         {
-            var cols = root.GetComponentsInChildren<Collider>(true);
-            if (cols != null && cols.Length > 0)
+            float playerY = playerTransform.position.y;
+            float topY = newLevelComp.TopY != 0f ? newLevelComp.TopY : (newLevelComp.LevelBounds.size != Vector3.zero ? newLevelComp.LevelBounds.max.y : root.transform.position.y);
+            float requiredTop = playerY - postCompleteDropClearance;
+            if (topY > requiredTop)
             {
-                foreach (var c in cols)
-                {
-                    if (c == null) continue;
-                    if (!hasBounds)
-                    {
-                        totalBounds = c.bounds;
-                        hasBounds = true;
-                    }
-                    else totalBounds.Encapsulate(c.bounds);
-                }
+                float shift = topY - requiredTop;
+                root.transform.position = root.transform.position - new Vector3(0f, shift, 0f);
+                newLevelComp.BaseY = root.transform.position.y;
+                newLevelComp.TopY = newLevelComp.TopY - shift;
+                Bounds b = newLevelComp.LevelBounds;
+                b.min = b.min - new Vector3(0f, shift, 0f);
+                b.max = b.max - new Vector3(0f, shift, 0f);
+                newLevelComp.LevelBounds = b;
+                Debug.Log($"EndlessDescent: adjusted generated level down by {shift} to ensure clearance; new baseY={root.transform.position.y}");
             }
         }
 
-        if (hasBounds)
-        {
-            Debug.Log($"EndlessDescent: generated level bounds min={totalBounds.min}, max={totalBounds.max}");
-            // cache bounds and top Y on LevelInstanceRoot for later use (player placement, spawns)
-            if (levelComp != null)
-            {
-                levelComp.LevelBounds = totalBounds;
-                levelComp.TopY = totalBounds.max.y;
-            }
-            if (autoShiftByPlayer && playerTransform != null)
-            {
-                float playerY = playerTransform.position.y;
-                float topY = totalBounds.max.y;
-                float requiredTop = playerY - postCompleteDropClearance;
-                if (topY > requiredTop)
-                {
-                    float shift = topY - requiredTop;
-                    root.transform.position = root.transform.position - new Vector3(0f, shift, 0f);
-                    if (levelComp != null)
-                    {
-                        levelComp.BaseY = root.transform.position.y;
-                        // adjust cached bounds and top Y by the applied shift
-                        levelComp.TopY = levelComp.TopY - shift;
-                        Bounds b = levelComp.LevelBounds;
-                        b.min = b.min - new Vector3(0f, shift, 0f);
-                        b.max = b.max - new Vector3(0f, shift, 0f);
-                        levelComp.LevelBounds = b;
-                    }
-                    Debug.Log($"EndlessDescent: adjusted generated level down by {shift} to ensure clearance; new baseY={root.transform.position.y}");
-                }
-            }
-        }
-        // ensure transition anchors exist on generated level
+        // ensure transition anchors exist (generator should have created them, but keep a safe fallback)
         var anchorsComp = root.GetComponent<LevelTransitionAnchors>();
         if (anchorsComp == null) anchorsComp = root.AddComponent<LevelTransitionAnchors>();
 
-        // try to find an existing EntryAnchor child
-        Transform foundEntry = null;
-        foreach (var t in root.GetComponentsInChildren<Transform>(true))
+        if (anchorsComp.EntryAnchor == null)
         {
-            if (t == null) continue;
-            if (t.name.Equals("Level Entry Anchor", StringComparison.OrdinalIgnoreCase))
+            // find named child entry anchor if generator created it
+            Transform foundEntry = null;
+            foreach (var t in root.GetComponentsInChildren<Transform>(true))
             {
-                foundEntry = t; break;
+                if (t == null) continue;
+                if (t.name.Equals("Level Entry Anchor", StringComparison.OrdinalIgnoreCase))
+                {
+                    foundEntry = t; break;
+                }
             }
-        }
-
-        if (foundEntry == null)
-        {
-            Vector3 entryPos;
-            if (hasBounds)
+            if (foundEntry != null)
             {
-                entryPos = new Vector3(totalBounds.center.x, totalBounds.max.y - entryPointDownOffset, totalBounds.center.z);
+                anchorsComp.EntryAnchor = foundEntry;
+                if (newLevelComp != null && newLevelComp.EntryPoint == null) newLevelComp.EntryPoint = foundEntry;
+                Debug.Log($"EndlessDescent: found existing EntryAnchor '{foundEntry.name}' for '{root.name}' at {foundEntry.position}");
             }
-            else
-            {
-                entryPos = root.transform.position + Vector3.up * Mathf.Max(10f, levelHeight * 0.6f);
-            }
-            GameObject ep = new GameObject("Level Entry Anchor");
-            ep.transform.SetParent(root.transform, true);
-            ep.transform.position = entryPos;
-            anchorsComp.EntryAnchor = ep.transform;
-            if (levelComp != null) levelComp.EntryPoint = ep.transform;
-            Debug.Log($"EndlessDescent: created EntryAnchor at {entryPos} for '{root.name}'");
-        }
-        else
-        {
-            anchorsComp.EntryAnchor = foundEntry;
-            if (levelComp != null && levelComp.EntryPoint == null) levelComp.EntryPoint = foundEntry;
-            Debug.Log($"EndlessDescent: found existing EntryAnchor '{foundEntry.name}' for '{root.name}' at {foundEntry.position}");
-        }
-
-        // find DescentSphereTrigger in this level to assign ExitAnchor if present
-        var ds = root.GetComponentInChildren<DescentSphereTrigger>(true);
-        if (ds != null)
-        {
-            anchorsComp.ExitAnchor = ds.transform;
-            anchorsComp.FinalArenaRoot = FindFinalArenaRoot(root)?.transform;
-            Debug.Log($"EndlessDescent: assigned ExitAnchor from DescentSphereTrigger '{ds.gameObject.name}' for '{root.name}'");
         }
 
         levelRoots.Add(root);

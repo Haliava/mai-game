@@ -313,13 +313,6 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
         Vector3 oldExitPosition = GetLevelExitPosition(source, completedLevelRoot);
         float oldExitY = oldExitPosition.y;
         Debug.Log($"EndlessDescent: source/exit position = {oldExitPosition} (oldExitY={oldExitY:F2})");
-        // destroy the sphere object itself if present
-        if (source != null && source.gameObject != null)
-        {
-            Debug.Log($"EndlessDescent: destroying source sphere '{source.gameObject.name}'");
-            if (Application.isPlaying) Destroy(source.gameObject);
-            else DestroyImmediate(source.gameObject);
-        }
 
         state = RunState.GeneratingNextLevel;
 
@@ -492,7 +485,7 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
         {
             try
             {
-                RemoveCompletedFinalArena(completedLevelRoot.GetComponent<LevelInstanceRoot>());
+                RemoveCompletedFinalArena(completedLevelRoot, source);
                 Debug.Log($"EndlessDescent: removed completed final arena from '{completedLevelRoot.name}'");
             }
             catch (Exception ex)
@@ -1433,6 +1426,72 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
         Debug.Log($"EndlessDescent: destroying final arena '{final.name}' in '{root.name}'");
         if (Application.isPlaying) Destroy(final);
         else DestroyImmediate(final);
+    }
+
+    // Overload: remove final arena using the completed level root and the source sphere that triggered completion.
+    private void RemoveCompletedFinalArena(GameObject completedLevelRoot, DescentSphereTrigger source)
+    {
+        if (completedLevelRoot == null)
+        {
+            Debug.LogWarning("EndlessDescent: RemoveCompletedFinalArena called with null completedLevelRoot");
+            return;
+        }
+
+        // First try: walk up from the source sphere and look for a parent that matches typical final arena naming
+        if (source != null)
+        {
+            Transform t = source.transform;
+            while (t != null && t != completedLevelRoot.transform)
+            {
+                if (t.name.IndexOf("Final Pedestal Arena", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    t.name.IndexOf("Final Pedestal", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    t.name.IndexOf("FinalArena", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    Debug.Log($"EndlessDescent: destroying final arena parent '{t.name}' found from source");
+                    if (Application.isPlaying) Destroy(t.gameObject); else DestroyImmediate(t.gameObject);
+                    return;
+                }
+                t = t.parent;
+            }
+        }
+
+        // Second try: use existing helper that heuristically finds final arena root
+        var final = FindFinalArenaRoot(completedLevelRoot);
+        if (final != null)
+        {
+            Debug.Log($"EndlessDescent: destroying final arena '{final.name}' from heuristic search");
+            if (Application.isPlaying) Destroy(final); else DestroyImmediate(final);
+            return;
+        }
+
+        // Last resort: search children for names and delete top-most parent matching hints
+        string[] hints = new[] { "Pedestal", "Victory", "Altar", "Final" };
+        var all = completedLevelRoot.GetComponentsInChildren<Transform>(true);
+        foreach (var tr in all)
+        {
+            if (tr == null || tr.gameObject == completedLevelRoot) continue;
+            foreach (var h in hints)
+            {
+                if (tr.name.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    Transform cur = tr;
+                    while (cur.parent != null && cur.parent.gameObject != completedLevelRoot)
+                    {
+                        cur = cur.parent;
+                    }
+                    Debug.Log($"EndlessDescent: destroying fallback arena root '{cur.name}'");
+                    if (Application.isPlaying) Destroy(cur.gameObject); else DestroyImmediate(cur.gameObject);
+                    return;
+                }
+            }
+        }
+
+        // final fallback: destroy the source sphere itself
+        if (source != null && source.gameObject != null)
+        {
+            Debug.Log($"EndlessDescent: destroying source sphere '{source.gameObject.name}' as last resort");
+            if (Application.isPlaying) Destroy(source.gameObject); else DestroyImmediate(source.gameObject);
+        }
     }
 
     private void CleanupLevelsOlderThanPrevious(int currentNextIndex)

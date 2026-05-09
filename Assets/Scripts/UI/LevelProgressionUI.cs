@@ -14,6 +14,7 @@ public sealed class LevelProgressionUI : MonoBehaviour
 
     public void UpdateProgress(int completedLevels, float depthMeters)
     {
+        Debug.Log($"LevelProgressionUI: UpdateProgress levels={completedLevels}, meters={Mathf.FloorToInt(depthMeters)}");
         if (levelsText != null) levelsText.text = $"Уровни пройдены: {completedLevels}";
         if (depthText != null) depthText.text = $"Глубина: {Mathf.FloorToInt(depthMeters)} м";
     }
@@ -21,7 +22,11 @@ public sealed class LevelProgressionUI : MonoBehaviour
     public static LevelProgressionUI EnsureInScene()
     {
         LevelProgressionUI existing = FindAnyObjectByType<LevelProgressionUI>();
-        if (existing != null) return existing;
+        if (existing != null)
+        {
+            Debug.Log("LevelProgressionUI: found existing UI in scene");
+            return existing;
+        }
 
         GameObject canvasObject = new("LevelProgression Canvas");
         Canvas canvas = canvasObject.AddComponent<Canvas>();
@@ -70,6 +75,7 @@ public sealed class LevelProgressionUI : MonoBehaviour
         ui.root = panel;
         ui.levelsText = levels;
         ui.depthText = depth;
+        Debug.Log("LevelProgressionUI: created UI via EnsureInScene");
         ui.UpdateProgress(0, 0f);
         return ui;
     }

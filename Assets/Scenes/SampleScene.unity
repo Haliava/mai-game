@@ -906,6 +906,91 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 32016673}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &56620802
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 56620804}
+  - component: {fileID: 56620803}
+  m_Layer: 0
+  m_Name: GameSystems
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &56620803
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 56620802}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 455764ae9bab161488613be343db55cb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EndlessDescentGameManager
+  completedLevels: 0
+  totalDescentMeters: 0
+  levelHeight: 250
+  keepPreviousLevelsCount: 2
+  deleteOldLevels: 1
+  spawnNewCentipedeEachLevel: 1
+  destroyOldCentipedes: 0
+  healPlayerOnLevelComplete: 1
+  generateNextLevelOnSphereTouch: 1
+  pauseDuringLevelGeneration: 0
+  freezeGameOnDeath: 1
+  showCursorOnDeath: 1
+  lockPlayerInputOnDeath: 1
+  baseSeed: 1337
+  levelsParent: {fileID: 0}
+  removeCompletedLevelImmediately: 1
+  postCompleteDropClearance: 3
+  playCentipedeIntroOnlyOnFirstLevel: 1
+  allowCentipedeIntroOnGeneratedLevels: 0
+  destroyPreviousCentipedeOnNewLevel: 1
+  repositionPlayerToNextLevelStart: 1
+  nextLevelStartYOffset: -5
+  nextLevelStartClearanceRadius: 2
+  nextLevelStartForwardOffset: 0
+  resetPlayerVelocityOnLevelTransition: 1
+  preserveSomeDownwardVelocity: 1
+  transitionDownwardVelocity: -4
+  baseCentipedesPerLevel: 1
+  additionalCentipedesPerLevel: 1
+  maxCentipedesPerLevel: 8
+  scaleCentipedeCountWithLevel: 1
+  centipedeMinSpawnDistanceFromPlayer: 25
+  centipedeMaxSpawnDistanceFromPlayer: 120
+  centipedeMinDistanceBetweenSpawns: 20
+  centipedeSpawnAttemptsPerMonster: 30
+  preferShaftWallSpawns: 1
+  allowStructureSurfaceSpawns: 1
+  centipedeSpawnSurfaceMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  playIntroOnlyForFirstCentipedeOfRun: 1
+--- !u!4 &56620804
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 56620802}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 7.95483, y: -8.69664, z: -2.66666}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &63235747
 GameObject:
   m_ObjectHideFlags: 0
@@ -1631,116 +1716,7 @@ MonoBehaviour:
   deactivateAfterTriggered: 1
   enableOverlapFallback: 1
   overlapRadiusOverride: 1
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 103422219}
-  - component: {fileID: 103422222}
-  - component: {fileID: 103422221}
-  - component: {fileID: 103422220}
-  m_Layer: 8
-  m_Name: Broken Cylinder Wall 02
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &103422219
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 103422218}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0.0007645285, y: 0.15516983, z: -0.003929064, w: 0.9878797}
-  m_LocalPosition: {x: 9.424002, y: 1.0984727, z: 28.96097}
-  m_LocalScale: {x: 17.279917, y: 22.759134, z: 1.9492811}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 1698145346}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!23 &103422220
-MeshRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 103422218}
-  m_Enabled: 1
-  m_CastShadows: 1
-  m_ReceiveShadows: 1
-  m_DynamicOccludee: 1
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 1
-  m_LightProbeUsage: 1
-  m_ReflectionProbeUsage: 1
-  m_RayTracingMode: 2
-  m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 1
-  m_ForceMeshLod: -1
-  m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 1088908115}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_ReceiveGI: 1
-  m_PreserveUVs: 1
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 1
-  m_SelectedEditorRenderState: 3
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_GlobalIlluminationMeshLod: 0
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: 0
-  m_MaskInteraction: 0
-  m_AdditionalVertexStreams: {fileID: 0}
---- !u!65 &103422221
-BoxCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 103422218}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Size: {x: 1, y: 1, z: 1}
-  m_Center: {x: 0, y: 0, z: 0}
---- !u!33 &103422222
-MeshFilter:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 103422218}
-  m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+  autoCreateManagerIfMissing: 0
 --- !u!1 &104381710
 GameObject:
   m_ObjectHideFlags: 0
@@ -25076,8 +25052,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DescentSphereTrigger
   requireTouchFromBelow: 1
-  belowTouchTolerance: 0.25
+  belowTouchTolerance: 0.24
   deactivateAfterTriggered: 1
+  enableOverlapFallback: 1
+  overlapRadiusOverride: 1.05
+  autoCreateManagerIfMissing: 0
 --- !u!23 &1175798063
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -37512,7 +37491,6 @@ Transform:
   m_Children:
   - {fileID: 1660551069}
   - {fileID: 2120460533}
-  - {fileID: 103422219}
   - {fileID: 1757281949}
   - {fileID: 351346411}
   - {fileID: 1584711852}
@@ -50434,3 +50412,4 @@ SceneRoots:
   - {fileID: 1082959470}
   - {fileID: 1668018259}
   - {fileID: 916001777}
+  - {fileID: 56620804}

@@ -8,6 +8,8 @@ public sealed class DescentSphereTrigger : MonoBehaviour
     [SerializeField] private bool deactivateAfterTriggered = true;
     [SerializeField] private bool enableOverlapFallback = true;
     [SerializeField] private float overlapRadiusOverride = 0f;
+    [Header("Fallback")]
+    [SerializeField] private bool autoCreateManagerIfMissing = false;
 
     private bool triggered = false;
     private Collider ownCollider;
@@ -52,9 +54,8 @@ public sealed class DescentSphereTrigger : MonoBehaviour
     public void HandleTriggered(Transform playerTransform)
     {
         if (triggered) return;
-        triggered = true;
 
-        // disable existing VictorySphereInteractable if present
+        // disable existing VictorySphereInteractable if present (keeps legacy UI disabled)
         var old = GetComponent<VictorySphereInteractable>();
         if (old != null) old.enabled = false;
 
@@ -76,22 +77,78 @@ public sealed class DescentSphereTrigger : MonoBehaviour
 
         if (!fromBelow)
         {
+            // not a valid from-below touch
             triggered = false;
             return;
         }
 
         Debug.Log("DescentSphereTrigger: triggered valid touch from below.");
 
-        // inform game manager
-        if (EndlessDescentGameManager.Instance != null)
+        // resolve manager safely
+        var mgr = ResolveManager();
+        if (mgr == null)
         {
-            EndlessDescentGameManager.Instance.CompleteCurrentLevel(this);
+            Debug.LogError("DescentSphereTrigger: valid touch detected, but EndlessDescentGameManager.Instance is NULL. Level completion cannot continue.");
+            // allow retry
+            triggered = false;
+            return;
         }
 
-        if (deactivateAfterTriggered)
+        Debug.Log("DescentSphereTrigger: calling EndlessDescentGameManager.CompleteCurrentLevel");
+
+        bool accepted = false;
+        try
         {
-            if (ownCollider != null) ownCollider.enabled = false;
+            // prefer new TryCompleteCurrentLevel API, fallback to legacy CompleteCurrentLevel
+            var tryMethod = typeof(EndlessDescentGameManager).GetMethod("TryCompleteCurrentLevel", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+            if (tryMethod != null)
+            {
+                object result = tryMethod.Invoke(mgr, new object[] { this });
+                if (result is bool b) accepted = b;
+            }
+            else
+            {
+                mgr.CompleteCurrentLevel(this);
+                accepted = true;
+            }
         }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"DescentSphereTrigger: exception while calling manager: {ex}");
+            accepted = false;
+        }
+
+        Debug.Log("DescentSphereTrigger: CompleteCurrentLevel call finished/started");
+
+        if (accepted)
+        {
+            triggered = true;
+            if (deactivateAfterTriggered)
+            {
+                if (ownCollider != null) ownCollider.enabled = false;
+            }
+        }
+        else
+        {
+            // allow retry if manager didn't accept
+            triggered = false;
+        }
+    }
+
+    private EndlessDescentGameManager ResolveManager()
+    {
+        if (EndlessDescentGameManager.Instance != null) return EndlessDescentGameManager.Instance;
+        EndlessDescentGameManager found = FindAnyObjectByType<EndlessDescentGameManager>();
+        if (found != null) return found;
+        if (autoCreateManagerIfMissing)
+        {
+            Debug.LogWarning("DescentSphereTrigger: auto-creating EndlessDescentGameManager because autoCreateManagerIfMissing=true. This manager may lack scene references.");
+            GameObject go = new GameObject("EndlessDescentManager_AutoCreated");
+            var mgr = go.AddComponent<EndlessDescentGameManager>();
+            return mgr;
+        }
+        Debug.LogError("DescentSphereTrigger: No EndlessDescentGameManager found in scene.");
+        return null;
     }
 
     private static bool IsPlayer(Collider other)

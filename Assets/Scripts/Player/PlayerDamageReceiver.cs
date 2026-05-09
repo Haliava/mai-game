@@ -43,7 +43,7 @@ public sealed class PlayerDamageReceiver : MonoBehaviour
     {
         if (fpsController == null)
         {
-            fpsController = GetComponent<FPSCharacterController3D>() ?? FindObjectOfType<FPSCharacterController3D>();
+            fpsController = GetComponent<FPSCharacterController3D>() ?? UnityEngine.Object.FindAnyObjectByType<FPSCharacterController3D>();
         }
         if (playerHealth == null)
         {

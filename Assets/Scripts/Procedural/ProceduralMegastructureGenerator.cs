@@ -679,6 +679,14 @@ public sealed class ProceduralMegastructureGenerator : MonoBehaviour
         {
             generatedStructureBounds.Add(collider.bounds);
         }
+
+        // mark this floor as a transition removal object so managers can reliably find and remove it
+        try
+        {
+            var marker = floor.AddComponent<LevelTransitionRemovalObject>();
+            marker.Phase = LevelTransitionRemovalObject.RemovalPhase.AfterNextLevelReady;
+        }
+        catch { }
     }
 
     private void CreateWallScar(Transform parent, System.Random rng, Vector3 radial, float angle, int boundaryLayer)

@@ -306,27 +306,8 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
             {
                 Debug.Log("EndlessDescent: no explicit final arena found (will attempt to remove pedestal/sphere after alignment)");
             }
-
-            Transform shaftBottomT = completedLevelRoot.transform.Find("Shaft Boundary/Shaft Bottom Floor");
-            if (shaftBottomT != null)
-            {
-                Debug.Log($"EndlessDescent: destroying Shaft Bottom Floor '{shaftBottomT.name}' in '{completedLevelRoot.name}'");
-                if (Application.isPlaying) Destroy(shaftBottomT.gameObject); else DestroyImmediate(shaftBottomT.gameObject);
-            }
-            else
-            {
-                var allChildren = completedLevelRoot.GetComponentsInChildren<Transform>(true);
-                foreach (var tr in allChildren)
-                {
-                    if (tr == null) continue;
-                    if (tr.name.Equals("Shaft Bottom Floor", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Debug.Log($"EndlessDescent: destroying Shaft Bottom Floor '{tr.name}' found under '{completedLevelRoot.name}'");
-                        if (Application.isPlaying) Destroy(tr.gameObject); else DestroyImmediate(tr.gameObject);
-                        break;
-                    }
-                }
-            }
+                // Defer removal of Shaft Bottom Floor until after the next level is successfully generated and validated.
+                // Removal will be performed together with final arena and other transition-removal objects.
         }
 
         Vector3 oldExitPosition = GetLevelExitPosition(source, completedLevelRoot);
@@ -506,6 +487,16 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
             {
                 RemoveCompletedFinalArena(completedLevelRoot, source);
                 Debug.Log($"EndlessDescent: removed completed final arena from '{completedLevelRoot.name}'");
+                try
+                {
+                    int removedBottomCount = RemoveCompletedBottomFloors(completedLevelRoot, source);
+                    int removedTransitionCount = RemoveTransitionRemovalObjects(completedLevelRoot);
+                    Debug.Log($"EndlessDescent: removed {removedBottomCount} bottom floor(s) and {removedTransitionCount} transition object(s) from '{completedLevelRoot.name}'");
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"EndlessDescent: failed to remove bottom floors/transition objects cleanly: {ex}");
+                }
             }
             catch (Exception ex)
             {
@@ -1389,6 +1380,139 @@ public sealed class EndlessDescentGameManager : MonoBehaviour
             Debug.Log($"EndlessDescent: destroying source sphere '{source.gameObject.name}' as last resort");
             if (Application.isPlaying) Destroy(source.gameObject); else DestroyImmediate(source.gameObject);
         }
+    }
+
+    // Helper: disable renderers/colliders immediately and destroy object (or DestroyImmediate in editor)
+    private static void DisableAndDestroy(GameObject go)
+    {
+        if (go == null) return;
+        foreach (var c in go.GetComponentsInChildren<Collider>(true))
+        {
+            try { if (c != null) c.enabled = false; } catch { }
+        }
+        foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+        {
+            try { if (r != null) r.enabled = false; } catch { }
+        }
+        try { go.SetActive(false); } catch { }
+        if (Application.isPlaying) UnityEngine.Object.Destroy(go);
+        else UnityEngine.Object.DestroyImmediate(go);
+    }
+
+    private bool IsChildOf(Transform child, Transform parent)
+    {
+        if (child == null || parent == null) return false;
+        while (child != null)
+        {
+            if (child == parent) return true;
+            child = child.parent;
+        }
+        return false;
+    }
+
+    private string GetTransformPath(Transform t)
+    {
+        if (t == null) return "<null>";
+        var parts = new List<string>();
+        Transform cur = t;
+        while (cur != null)
+        {
+            parts.Add(cur.name);
+            cur = cur.parent;
+        }
+        parts.Reverse();
+        return string.Join("/", parts);
+    }
+
+    private int RemoveTransitionRemovalObjects(GameObject completedLevelRoot)
+    {
+        int removed = 0;
+        if (completedLevelRoot == null) return removed;
+        var markers = completedLevelRoot.GetComponentsInChildren<LevelTransitionRemovalObject>(true);
+        if (markers == null || markers.Length == 0)
+        {
+            Debug.Log($"EndlessDescent: no transition removal markers found in '{completedLevelRoot.name}'");
+            return removed;
+        }
+        foreach (var marker in markers)
+        {
+            if (marker == null) continue;
+            if (marker.Phase != LevelTransitionRemovalObject.RemovalPhase.AfterNextLevelReady) continue;
+            Debug.Log($"EndlessDescent: removing transition object '{marker.name}' path={GetTransformPath(marker.transform)}");
+            DisableAndDestroy(marker.gameObject);
+            removed++;
+        }
+        Debug.Log($"EndlessDescent: removed {removed} transition removal object(s) from '{completedLevelRoot.name}'");
+        return removed;
+    }
+
+    private int RemoveCompletedBottomFloors(GameObject completedLevelRoot, DescentSphereTrigger source)
+    {
+        if (completedLevelRoot == null) return 0;
+        float sourceY = source != null ? source.transform.position.y : float.NegativeInfinity;
+        int removed = 0;
+
+        Debug.Log($"EndlessDescent: searching bottom floors in completed level {completedLevelRoot.name}");
+
+        var transforms = completedLevelRoot.GetComponentsInChildren<Transform>(true);
+        foreach (var tr in transforms)
+        {
+            if (tr == null || tr.gameObject == completedLevelRoot) continue;
+
+            string name = tr.name ?? string.Empty;
+            bool looksLikeBottomFloor =
+                name.IndexOf("Shaft Bottom Floor", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                name.IndexOf("Bottom Floor", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                name.IndexOf("ShaftBottom", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                name.IndexOf("Bottom", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            if (!looksLikeBottomFloor) continue;
+
+            // Ensure this candidate is a child of the completed level root
+            if (!IsChildOf(tr, completedLevelRoot.transform))
+            {
+                Debug.LogWarning($"EndlessDescent: candidate '{tr.name}' is not a child of '{completedLevelRoot.name}' (path={GetTransformPath(tr)}). Skipping.");
+                continue;
+            }
+
+            // For old bottom floor it should be at or below the source sphere Y (within some leeway)
+            if (source != null && tr.position.y > sourceY + 10f) continue;
+
+            bool hasCollider = false;
+            bool hasRenderer = false;
+            float sizeMetric = 0f;
+            foreach (var c in tr.GetComponentsInChildren<Collider>(true))
+            {
+                if (c == null) continue;
+                hasCollider = true;
+                try { sizeMetric = Mathf.Max(sizeMetric, c.bounds.size.magnitude); } catch { }
+            }
+            foreach (var r in tr.GetComponentsInChildren<Renderer>(true))
+            {
+                if (r == null) continue;
+                hasRenderer = true;
+                try { sizeMetric = Mathf.Max(sizeMetric, r.bounds.size.magnitude); } catch { }
+            }
+
+            Debug.Log($"EndlessDescent: bottom floor candidate name={tr.name}, path={GetTransformPath(tr)}, y={tr.position.y}, hasCollider={hasCollider}, hasRenderer={hasRenderer}");
+
+            // Heuristics to avoid deleting small incidental objects
+            if (!hasCollider && !hasRenderer) continue;
+            if (sizeMetric < 0.5f) continue;
+
+            // Immediately disable physics/visuals to avoid blocking the player
+            foreach (var c in tr.GetComponentsInChildren<Collider>(true)) { try { if (c != null) c.enabled = false; } catch { } }
+            foreach (var r in tr.GetComponentsInChildren<Renderer>(true)) { try { if (r != null) r.enabled = false; } catch { } }
+            try { tr.gameObject.SetActive(false); } catch { }
+
+            if (Application.isPlaying) UnityEngine.Object.Destroy(tr.gameObject); else UnityEngine.Object.DestroyImmediate(tr.gameObject);
+            Debug.Log($"EndlessDescent: removed completed Shaft Bottom Floor '{tr.name}' from {completedLevelRoot.name}");
+            removed++;
+        }
+
+        if (removed == 0) Debug.LogWarning("EndlessDescent: no Shaft Bottom Floor found under completed level. Check parenting: floor may not be child of Level_X.");
+        Debug.Log($"EndlessDescent: removed {removed} completed bottom floor object(s).");
+        return removed;
     }
 
     private void CleanupLevelsOlderThanPrevious(int currentNextIndex)

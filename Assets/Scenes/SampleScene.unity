@@ -962,6 +962,31 @@ MonoBehaviour:
   resetPlayerVelocityOnLevelTransition: 1
   preserveSomeDownwardVelocity: 1
   transitionDownwardVelocity: -4
+  alignNewLevelBelowPlayer: 1
+  nextLevelEntryGap: 8
+  minDropBeforeFirstStructure: 5
+  maxAllowedLevelAlignmentError: 2
+  entryPointDownOffset: 2
+  entryPointClearanceRadius: 2
+  keepPlayerWorldPositionOnLevelTransition: 1
+  onlyResetPlayerVelocityOnTransition: 1
+  cancelActiveGrappleOnLevelTransition: 1
+  centipedeSpawnSurfaceOffset: 0.5
+  verticalGapBetweenLevels: 12
+  firstPlatformTargetDrop: 20
+  maxFirstPlatformDrop: 35
+  keepPlayerOnOldPedestalUntilNextLevelReady: 1
+  deleteFinalArenaAfterNextLevelReady: 1
+  splitCompletedLevelOnTransition: 1
+  completedLevelUpperHalfDeleteRatio: 0.5
+  deleteAllLevelsOlderThanPrevious: 1
+  ensureFirstLandingPlatform: 1
+  firstLandingSearchRadius: 10
+  firstLandingMaxDrop: 35
+  addEmergencyLandingPlatformIfMissing: 1
+  firstLandingLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
   baseCentipedesPerLevel: 1
   additionalCentipedesPerLevel: 1
   maxCentipedesPerLevel: 8
@@ -3840,7 +3865,6 @@ Transform:
   - {fileID: 1911735133}
   - {fileID: 2109091569}
   - {fileID: 839785433}
-  - {fileID: 520077198}
   m_Father: {fileID: 916001777}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &238224998
@@ -12097,11 +12121,11 @@ Transform:
   m_GameObject: {fileID: 520077197}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: -150.6, z: 0}
+  m_LocalPosition: {x: 0, y: -0.6000061, z: 0}
   m_LocalScale: {x: 55.5, y: 0.6, z: 55.5}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 229945398}
+  m_Father: {fileID: 1800809950}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!64 &520077199
 MeshCollider:
@@ -40291,6 +40315,7 @@ Transform:
   - {fileID: 1723093211}
   - {fileID: 1528118942}
   - {fileID: 1175798060}
+  - {fileID: 520077198}
   m_Father: {fileID: 566308977}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!134 &1817289951

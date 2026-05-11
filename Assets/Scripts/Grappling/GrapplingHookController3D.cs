@@ -25,15 +25,11 @@ public sealed class GrapplingHookController3D : MonoBehaviour
     [SerializeField] private LayerMask aimMask = ~0;
     [SerializeField, Min(1f)] private float aimDistance = 100f;
 
-    [Header("Latch")]
+    [Header("Latch: Top Surfaces Only")]
     [SerializeField] private LayerMask grappleSurfaceMask = ~0;
-    [SerializeField, Min(0f)] private float latchRadius = 0.45f;
-    [SerializeField, Range(0f, 1f)] private float edgeNormalThreshold = 0.65f;
-    [SerializeField, Min(0f)] private float minEdgeAngle = 20f;
-    [SerializeField, Min(0f)] private float maxLatchSnapDistance = 0.75f;
-    [SerializeField] private bool allowBottomEdgeLatch = true;
-    [SerializeField] private bool allowTopSideLatch = true;
-    [SerializeField] private bool allowBottomSideLatch = true;
+
+    [Tooltip("Hook can latch only if contact normal is close enough to Vector3.up. 0.65 = forgiving top surfaces.")]
+    [SerializeField, Range(0f, 1f)] private float topSurfaceNormalThreshold = 0.65f;
 
     [Header("Hook")]
     [SerializeField, Min(0f)] private float hookLaunchSpeed = 32f;
@@ -46,15 +42,7 @@ public sealed class GrapplingHookController3D : MonoBehaviour
     [Header("Rope")]
     [SerializeField, Min(0.1f)] private float maxRopeLength = 15f;
     [SerializeField, Min(0f)] private float ropeExtendSpeed = 36f;
-    [SerializeField] private LayerMask ropeCollisionMask = ~0;
-    [SerializeField, Min(0.001f)] private float ropeRadius = 0.035f;
     [SerializeField, Min(0.001f)] private float ropeVisualWidth = 0.035f;
-
-    [Header("Wrap")]
-    [SerializeField, Min(0f)] private float wrapDetectionRadius = 0.85f;
-    [SerializeField, Min(0f)] private float unwrapAngleThreshold = 8f;
-    [SerializeField, Min(0f)] private float minWrapPointDistance = 0.15f;
-    [SerializeField, Min(0)] private int maxWrapPoints = 8;
 
     [Header("Debug")]
     [SerializeField] private bool showDebugGizmos = true;
@@ -95,29 +83,34 @@ public sealed class GrapplingHookController3D : MonoBehaviour
             return;
         }
 
-        if (IsHookActive())
+        if (!IsHookActive())
         {
-            if (!fireHeld || activeHook.HasExpired)
+            if (state == GrappleState.Released)
             {
-                ReleaseGrapple();
-                return;
+                state = GrappleState.Idle;
             }
 
-            if (activeHook.IsLatched)
-            {
-                LockLatchedRopeLengthIfNeeded();
-                state = GrappleState.Latched;
-                return;
-            }
+            return;
+        }
 
-            state = activeHook.State == GrappleHookProjectile3D.HookState.MaxLengthReached && rope != null && rope.IsFullyExtended
+        if (!fireHeld || activeHook.HasExpired)
+        {
+            ReleaseGrapple();
+            return;
+        }
+
+        if (activeHook.IsLatched)
+        {
+            LockLatchedRopeLengthIfNeeded();
+            state = GrappleState.Latched;
+            return;
+        }
+
+        state = activeHook.State == GrappleHookProjectile3D.HookState.MaxLengthReached
+            && rope != null
+            && rope.IsFullyExtended
                 ? GrappleState.MaxLength
                 : GrappleState.Flying;
-        }
-        else if (state == GrappleState.Released)
-        {
-            state = GrappleState.Idle;
-        }
     }
 
     private void FixedUpdate()
@@ -128,10 +121,12 @@ public sealed class GrapplingHookController3D : MonoBehaviour
         }
 
         float allowedLength = maxRopeLength;
+
         if (rope != null && rope.IsActive)
         {
-            allowedLength = activeHook.IsLatched ? rope.CurrentRopeLength : rope.AdvanceLength(Time.fixedDeltaTime);
-            UpdateRopeWrapPoints();
+            allowedLength = activeHook.IsLatched
+                ? rope.CurrentRopeLength
+                : rope.AdvanceLength(Time.fixedDeltaTime);
 
             if (activeHook.IsLatched && !latchedRopeLengthLocked)
             {
@@ -145,19 +140,7 @@ public sealed class GrapplingHookController3D : MonoBehaviour
             return;
         }
 
-        Vector3 constraintOrigin = playerGrappleAnchor.position;
-        if (rope != null && rope.IsActive)
-        {
-            constraintOrigin = rope.ConstraintOrigin;
-            allowedLength = rope.RemainingLengthForEndSegment;
-        }
-
-        activeHook.ApplyMaxDistanceConstraint(constraintOrigin, allowedLength);
-
-        if (rope != null && rope.IsActive)
-        {
-            UpdateRopeWrapPoints();
-        }
+        activeHook.ApplyMaxDistanceConstraint(playerGrappleAnchor.position, allowedLength);
     }
 
     public void StartGrapple()
@@ -176,26 +159,39 @@ public sealed class GrapplingHookController3D : MonoBehaviour
         ReleaseGrappleImmediate();
 
         Vector3 fireDirection = GetFireDirection();
+
         activeHookObject = CreateHookObject(fireDirection);
         activeHook = activeHookObject.GetComponent<GrappleHookProjectile3D>();
-        activeHook.Launch(fireDirection, hookLaunchSpeed, hookMass, hookDrag, hookGravityMultiplier, maxHookLifetime, hookColliderRadius);
-        activeHook.ConfigureEdgeLatch(
-            playerGrappleAnchor,
+
+        activeHook.Launch(
+            fireDirection,
+            hookLaunchSpeed,
+            hookMass,
+            hookDrag,
+            hookGravityMultiplier,
+            maxHookLifetime,
+            hookColliderRadius);
+
+        activeHook.ConfigureTopSurfaceLatch(
             grappleSurfaceMask,
-            latchRadius,
-            edgeNormalThreshold,
-            minEdgeAngle,
-            maxLatchSnapDistance,
-            allowBottomEdgeLatch,
-            allowTopSideLatch,
-            allowBottomSideLatch);
+            topSurfaceNormalThreshold);
+
         IgnorePlayerCollision(activeHook.HookCollider);
 
         if (rope != null)
         {
-            float initialRopeLength = Mathf.Max(hookColliderRadius * 2f, Vector3.Distance(playerGrappleAnchor.position, activeHookObject.transform.position));
-            rope.Begin(playerGrappleAnchor, activeHookObject.transform, maxRopeLength, ropeExtendSpeed, initialRopeLength, ropeVisualWidth, ropeMaterial);
-            rope.ConfigureWrap(ropeCollisionMask, ropeRadius, wrapDetectionRadius, unwrapAngleThreshold, minWrapPointDistance, maxWrapPoints);
+            float initialRopeLength = Mathf.Max(
+                hookColliderRadius * 2f,
+                Vector3.Distance(playerGrappleAnchor.position, activeHookObject.transform.position));
+
+            rope.Begin(
+                playerGrappleAnchor,
+                activeHookObject.transform,
+                maxRopeLength,
+                ropeExtendSpeed,
+                initialRopeLength,
+                ropeVisualWidth,
+                ropeMaterial);
         }
 
         state = GrappleState.Firing;
@@ -207,7 +203,7 @@ public sealed class GrapplingHookController3D : MonoBehaviour
         state = GrappleState.Released;
     }
 
-    private void ReleaseGrappleImmediate()
+    public void ReleaseGrappleImmediate()
     {
         if (activeHook != null)
         {
@@ -264,6 +260,7 @@ public sealed class GrapplingHookController3D : MonoBehaviour
         }
 
         Vector3 direction = aimPoint - playerGrappleAnchor.position;
+
         if (direction.sqrMagnitude < 0.0001f)
         {
             direction = playerCamera.transform.forward;
@@ -287,7 +284,6 @@ public sealed class GrapplingHookController3D : MonoBehaviour
             hookObject.name = "Runtime Grapple Hook";
             hookObject.transform.SetPositionAndRotation(playerGrappleAnchor.position, rotation);
             hookObject.transform.localScale = Vector3.one * hookColliderRadius * 2f;
-            hookObject.AddComponent<Rigidbody>();
         }
 
         GrappleHookProjectile3D projectile = hookObject.GetComponent<GrappleHookProjectile3D>();
@@ -316,22 +312,6 @@ public sealed class GrapplingHookController3D : MonoBehaviour
         return activeHookObject != null && activeHook != null;
     }
 
-    private void UpdateRopeWrapPoints()
-    {
-        rope.UpdateWrapPoints(
-            ropeCollisionMask,
-            ropeRadius,
-            wrapDetectionRadius,
-            unwrapAngleThreshold,
-            minWrapPointDistance,
-            maxWrapPoints,
-            edgeNormalThreshold,
-            minEdgeAngle,
-            allowBottomEdgeLatch,
-            allowTopSideLatch,
-            allowBottomSideLatch);
-    }
-
     private void LockLatchedRopeLengthIfNeeded()
     {
         if (latchedRopeLengthLocked || activeHook == null || !activeHook.IsLatched || rope == null || !rope.IsActive)
@@ -339,7 +319,7 @@ public sealed class GrapplingHookController3D : MonoBehaviour
             return;
         }
 
-        rope.LockLengthToCurrentPathWithoutStretch();
+        rope.LockLengthToCurrentDirectDistance();
         latchedRopeLengthLocked = true;
     }
 
@@ -368,6 +348,7 @@ public sealed class GrapplingHookController3D : MonoBehaviour
         for (int i = 0; i < playerColliders.Length; i++)
         {
             Collider playerCollider = playerColliders[i];
+
             if (playerCollider != null && playerCollider != hookCollider)
             {
                 Physics.IgnoreCollision(hookCollider, playerCollider, true);
@@ -394,12 +375,6 @@ public sealed class GrapplingHookController3D : MonoBehaviour
             {
                 Gizmos.color = Color.yellow;
                 Gizmos.DrawWireSphere(playerGrappleAnchor.position, rope.CurrentRopeLength);
-
-                Gizmos.color = Color.magenta;
-                for (int i = 0; i < rope.WrapPointCount; i++)
-                {
-                    Gizmos.DrawWireSphere(rope.GetPointPosition(i + 1), ropeRadius * 2f);
-                }
             }
         }
 
@@ -407,13 +382,17 @@ public sealed class GrapplingHookController3D : MonoBehaviour
         {
             Gizmos.color = Color.white;
             Gizmos.DrawLine(playerGrappleAnchor.position, activeHookObject.transform.position);
-            Gizmos.color = state == GrappleState.Latched ? Color.red : state == GrappleState.MaxLength ? Color.yellow : Color.green;
+
+            Gizmos.color = state == GrappleState.Latched
+                ? Color.red
+                : state == GrappleState.MaxLength ? Color.yellow : Color.green;
+
             Gizmos.DrawWireSphere(activeHookObject.transform.position, hookColliderRadius);
 
             if (activeHook != null && activeHook.IsLatched)
             {
                 Gizmos.color = Color.red;
-                Gizmos.DrawWireSphere(activeHook.LatchPoint, latchRadius);
+                Gizmos.DrawWireSphere(activeHook.LatchPoint, hookColliderRadius * 2f);
             }
         }
     }

@@ -20,22 +20,15 @@ public sealed class GrappleHookProjectile3D : MonoBehaviour
     [Header("Runtime")]
     [SerializeField] private HookState state = HookState.Inactive;
     [SerializeField] private Vector3 latchPoint;
-    [SerializeField] private GrappleEdgeType latchedEdgeType = GrappleEdgeType.Unsupported;
+    [SerializeField] private Vector3 latchNormal = Vector3.up;
 
     private float gravityMultiplier = 1f;
     private float maxLifetime = 8f;
     private float launchTime;
     private bool launched;
-    private bool edgeLatchEnabled = true;
-    private Transform ropeStart;
+
     private LayerMask grappleSurfaceMask = ~0;
-    private float latchRadius = 0.45f;
-    private float edgeNormalThreshold = 0.65f;
-    private float minEdgeAngle = 20f;
-    private float maxLatchSnapDistance = 0.75f;
-    private bool allowBottomEdgeLatch = true;
-    private bool allowTopSideLatch = true;
-    private bool allowBottomSideLatch = true;
+    private float topSurfaceNormalThreshold = 0.65f;
     private Collider latchedCollider;
 
     public Rigidbody Rigidbody => hookRigidbody;
@@ -45,10 +38,20 @@ public sealed class GrappleHookProjectile3D : MonoBehaviour
     public bool HasExpired => launched && state != HookState.Latched && maxLifetime > 0f && Time.time - launchTime >= maxLifetime;
     public bool IsLatched => state == HookState.Latched;
     public Vector3 LatchPoint => latchPoint;
+    public Vector3 LatchNormal => latchNormal;
     public Collider LatchedCollider => latchedCollider;
-    public GrappleEdgeType LatchedEdgeType => latchedEdgeType;
 
-    public void Launch(Vector3 direction, float speed, float mass, float linearDamping, float gravityMultiplierValue, float lifetime, float colliderRadius)
+    // Compatibility property: old code may still read it.
+    public GrappleEdgeType LatchedEdgeType => GrappleEdgeType.Unsupported;
+
+    public void Launch(
+        Vector3 direction,
+        float speed,
+        float mass,
+        float linearDamping,
+        float gravityMultiplierValue,
+        float lifetime,
+        float colliderRadius)
     {
         CacheReferences();
 
@@ -63,6 +66,7 @@ public sealed class GrappleHookProjectile3D : MonoBehaviour
         }
 
         direction.Normalize();
+
         transform.rotation = Quaternion.LookRotation(direction, Vector3.up);
 
         gravityMultiplier = Mathf.Max(0f, gravityMultiplierValue);
@@ -84,6 +88,13 @@ public sealed class GrappleHookProjectile3D : MonoBehaviour
         ConfigureCollider(colliderRadius);
     }
 
+    public void ConfigureTopSurfaceLatch(LayerMask surfaceMask, float normalThreshold)
+    {
+        grappleSurfaceMask = surfaceMask;
+        topSurfaceNormalThreshold = Mathf.Clamp01(normalThreshold);
+    }
+
+    // Compatibility method: old controller calls will still compile if something remains.
     public void ConfigureEdgeLatch(
         Transform ropeStartTransform,
         LayerMask surfaceMask,
@@ -95,16 +106,7 @@ public sealed class GrappleHookProjectile3D : MonoBehaviour
         bool allowTopSide,
         bool allowBottomSide)
     {
-        ropeStart = ropeStartTransform;
-        grappleSurfaceMask = surfaceMask;
-        latchRadius = Mathf.Max(0f, radius);
-        edgeNormalThreshold = Mathf.Clamp01(normalThreshold);
-        minEdgeAngle = Mathf.Max(0f, minimumEdgeAngle);
-        maxLatchSnapDistance = Mathf.Max(0f, maximumSnapDistance);
-        allowBottomEdgeLatch = allowBottomEdge;
-        allowTopSideLatch = allowTopSide;
-        allowBottomSideLatch = allowBottomSide;
-        edgeLatchEnabled = latchRadius > 0f && maxLatchSnapDistance > 0f;
+        ConfigureTopSurfaceLatch(surfaceMask, normalThreshold);
     }
 
     public void ApplyMaxDistanceConstraint(Vector3 anchorPosition, float maxDistance)
@@ -136,12 +138,14 @@ public sealed class GrappleHookProjectile3D : MonoBehaviour
 
         Vector3 direction = offset / distance;
         Vector3 limitedPosition = anchorPosition + direction * maxDistance;
+
         hookRigidbody.position = limitedPosition;
         transform.position = limitedPosition;
         Physics.SyncTransforms();
 
         Vector3 velocity = hookRigidbody.linearVelocity;
         float outwardSpeed = Vector3.Dot(velocity, direction);
+
         if (outwardSpeed > 0f)
         {
             hookRigidbody.linearVelocity = velocity - direction * outwardSpeed;
@@ -150,78 +154,17 @@ public sealed class GrappleHookProjectile3D : MonoBehaviour
         state = HookState.MaxLengthReached;
     }
 
-    private void LimitOutwardVelocity(Vector3 anchorPosition, float maxDistance)
-    {
-        Vector3 offset = hookRigidbody.position - anchorPosition;
-        float distance = offset.magnitude;
-        Vector3 direction;
-        if (distance < 0.0001f)
-        {
-            Vector3 velocityDirection = hookRigidbody.linearVelocity;
-            if (velocityDirection.sqrMagnitude < 0.0001f)
-            {
-                return;
-            }
-
-            direction = velocityDirection.normalized;
-        }
-        else
-        {
-            direction = offset / distance;
-        }
-
-        Vector3 velocity = hookRigidbody.linearVelocity;
-        float outwardSpeed = Vector3.Dot(velocity, direction);
-        if (outwardSpeed <= 0f)
-        {
-            return;
-        }
-
-        float remainingDistance = Mathf.Max(0f, maxDistance - distance);
-        float step = Mathf.Max(Time.fixedDeltaTime, 0.0001f);
-        float allowedOutwardSpeed = remainingDistance / step;
-        if (outwardSpeed <= allowedOutwardSpeed)
-        {
-            return;
-        }
-
-        hookRigidbody.linearVelocity = velocity - direction * (outwardSpeed - allowedOutwardSpeed);
-        state = HookState.MaxLengthReached;
-    }
-
     public void MarkReleased()
     {
         launched = false;
         state = HookState.Released;
         latchedCollider = null;
-        latchedEdgeType = GrappleEdgeType.Unsupported;
     }
 
+    // Compatibility method. It no longer searches edges.
     public bool TryLatchAgainstCollider(Collider targetCollider)
     {
-        if (!CanTryLatch(targetCollider))
-        {
-            return false;
-        }
-
-        if (!GrappleEdgeDetector3D.TryFindBestLatchEdge(
-                targetCollider,
-                hookRigidbody.position,
-                latchRadius,
-                edgeNormalThreshold,
-                minEdgeAngle,
-                maxLatchSnapDistance,
-                allowBottomEdgeLatch,
-                allowTopSideLatch,
-                allowBottomSideLatch,
-                false,
-                out GrappleEdgeHit edgeHit))
-        {
-            return false;
-        }
-
-        LatchToEdge(edgeHit);
-        return true;
+        return false;
     }
 
     private void Reset()
@@ -280,6 +223,7 @@ public sealed class GrappleHookProjectile3D : MonoBehaviour
         hookCollider.isTrigger = false;
 
         float safeRadius = Mathf.Max(0.01f, radius);
+
         if (hookCollider is SphereCollider sphereCollider)
         {
             sphereCollider.radius = safeRadius;
@@ -291,9 +235,9 @@ public sealed class GrappleHookProjectile3D : MonoBehaviour
         }
     }
 
-    private bool CanTryLatch(Collider targetCollider)
+    private bool IsInGrappleSurfaceMask(Collider targetCollider)
     {
-        if (!launched || !edgeLatchEnabled || hookRigidbody == null || state == HookState.Latched || state == HookState.Released || targetCollider == null)
+        if (targetCollider == null)
         {
             return false;
         }
@@ -302,29 +246,113 @@ public sealed class GrappleHookProjectile3D : MonoBehaviour
         return (grappleSurfaceMask.value & (1 << targetLayer)) != 0;
     }
 
+    private bool IsTopSurface(Vector3 normal)
+    {
+        if (normal.sqrMagnitude < 0.0001f)
+        {
+            return false;
+        }
+
+        return Vector3.Dot(normal.normalized, Vector3.up) >= topSurfaceNormalThreshold;
+    }
+
     private void TryLatchFromCollision(Collision collision)
     {
-        if (collision == null)
+        if (collision == null || !launched || state == HookState.Latched || state == HookState.Released)
         {
             return;
         }
 
-        TryLatchAgainstCollider(collision.collider);
+        if (!IsInGrappleSurfaceMask(collision.collider))
+        {
+            return;
+        }
+
+        ContactPoint bestContact = default;
+        float bestDot = -1f;
+        bool found = false;
+
+        for (int i = 0; i < collision.contactCount; i++)
+        {
+            ContactPoint contact = collision.GetContact(i);
+            float dot = Vector3.Dot(contact.normal.normalized, Vector3.up);
+
+            if (dot >= topSurfaceNormalThreshold && dot > bestDot)
+            {
+                bestDot = dot;
+                bestContact = contact;
+                found = true;
+            }
+        }
+
+        if (!found)
+        {
+            return;
+        }
+
+        LatchToTopSurface(bestContact.point, bestContact.normal, collision.collider);
     }
 
-    private void LatchToEdge(GrappleEdgeHit edgeHit)
+    private void LimitOutwardVelocity(Vector3 anchorPosition, float maxDistance)
     {
-        latchPoint = edgeHit.Point;
-        latchedCollider = edgeHit.Collider;
-        latchedEdgeType = edgeHit.Type;
+        Vector3 offset = hookRigidbody.position - anchorPosition;
+        float distance = offset.magnitude;
+
+        Vector3 direction;
+
+        if (distance < 0.0001f)
+        {
+            Vector3 velocityDirection = hookRigidbody.linearVelocity;
+
+            if (velocityDirection.sqrMagnitude < 0.0001f)
+            {
+                return;
+            }
+
+            direction = velocityDirection.normalized;
+        }
+        else
+        {
+            direction = offset / distance;
+        }
+
+        Vector3 velocity = hookRigidbody.linearVelocity;
+        float outwardSpeed = Vector3.Dot(velocity, direction);
+
+        if (outwardSpeed <= 0f)
+        {
+            return;
+        }
+
+        float remainingDistance = Mathf.Max(0f, maxDistance - distance);
+        float step = Mathf.Max(Time.fixedDeltaTime, 0.0001f);
+        float allowedOutwardSpeed = remainingDistance / step;
+
+        if (outwardSpeed <= allowedOutwardSpeed)
+        {
+            return;
+        }
+
+        hookRigidbody.linearVelocity = velocity - direction * (outwardSpeed - allowedOutwardSpeed);
+        state = HookState.MaxLengthReached;
+    }
+
+    private void LatchToTopSurface(Vector3 point, Vector3 normal, Collider targetCollider)
+    {
+        latchPoint = point;
+        latchNormal = normal.sqrMagnitude > 0.0001f ? normal.normalized : Vector3.up;
+        latchedCollider = targetCollider;
+
         state = HookState.Latched;
 
         hookRigidbody.linearVelocity = Vector3.zero;
         hookRigidbody.angularVelocity = Vector3.zero;
         hookRigidbody.useGravity = false;
         hookRigidbody.isKinematic = true;
+
         hookRigidbody.position = latchPoint;
         transform.position = latchPoint;
+
         Physics.SyncTransforms();
     }
 }

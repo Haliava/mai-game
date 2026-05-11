@@ -41,7 +41,7 @@ public sealed class GrappleHookProjectile3D : MonoBehaviour
     public Vector3 LatchNormal => latchNormal;
     public Collider LatchedCollider => latchedCollider;
 
-    // Compatibility property: old code may still read it.
+    
     public GrappleEdgeType LatchedEdgeType => GrappleEdgeType.Unsupported;
 
     public void Launch(
@@ -94,7 +94,7 @@ public sealed class GrappleHookProjectile3D : MonoBehaviour
         topSurfaceNormalThreshold = Mathf.Clamp01(normalThreshold);
     }
 
-    // Compatibility method: old controller calls will still compile if something remains.
+    
     public void ConfigureEdgeLatch(
         Transform ropeStartTransform,
         LayerMask surfaceMask,
@@ -161,7 +161,7 @@ public sealed class GrappleHookProjectile3D : MonoBehaviour
         latchedCollider = null;
     }
 
-    // Compatibility method. It no longer searches edges.
+    
     public bool TryLatchAgainstCollider(Collider targetCollider)
     {
         return false;

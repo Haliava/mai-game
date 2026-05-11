@@ -75,9 +75,9 @@ public static class FinalPedestalArena
             sphereCollider.isTrigger = true;
         }
         AssignMaterial(sphere, settings.VictoryMaterial != null ? settings.VictoryMaterial : CreateEmissiveMaterial(settings.VictorySphereColor));
-        // replace legacy victory popup with descent trigger for endless mode
+        
         sphere.AddComponent<DescentSphereTrigger>();
-        // defaults: require touch from below, deactivate after trigger
+        
 
         Light light = sphere.AddComponent<Light>();
         light.type = LightType.Point;
@@ -85,7 +85,7 @@ public static class FinalPedestalArena
         light.intensity = 3.5f;
         light.range = 9f;
 
-        // explicit exit anchor for manager alignment (placed at the victory sphere position)
+        
         GameObject exitAnchor = new("Level Exit Anchor");
         exitAnchor.transform.SetParent(root.transform, false);
         exitAnchor.transform.position = sphere.transform.position;

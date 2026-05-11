@@ -7,6 +7,9 @@ public sealed class PlayerHealthUI : MonoBehaviour
     [SerializeField] private Text healthText;
     [SerializeField] private Image healthBar;
     [SerializeField] private Image damageFlash;
+    [SerializeField] private Slider healthSlider;
+    [Header("Damage Flash")]
+    [SerializeField, Min(0f)] private float minDamageToFlash = 2f;
 
     private PlayerHealth observed;
 
@@ -51,10 +54,11 @@ public sealed class PlayerHealthUI : MonoBehaviour
 
     private void OnDamaged(float amount, DamageType type, GameObject source)
     {
-        if (damageFlash != null)
-        {
-            damageFlash.color = new Color(1f, 0f, 0f, 0.6f);
-        }
+        if (damageFlash == null) return;
+
+        if (amount < minDamageToFlash) return;
+
+        damageFlash.color = new Color(1f, 0f, 0f, 0.6f);
     }
 
     public static PlayerHealthUI EnsureInScene()
@@ -118,7 +122,7 @@ public sealed class PlayerHealthUI : MonoBehaviour
         PlayerHealthUI ui = canvasObject.AddComponent<PlayerHealthUI>();
         ui.root = panel;
         ui.healthText = t;
-        // We'll treat healthBar's Image as filled image; use fillAmount - but standard Image needs Fill Method.
+        
         ui.healthBar = hb;
         ui.damageFlash = flashImage;
         return ui;

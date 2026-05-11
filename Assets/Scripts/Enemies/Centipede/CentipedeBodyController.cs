@@ -452,6 +452,46 @@ public sealed class CentipedeBodyController : MonoBehaviour
         return corrected;
     }
 
+    private static Vector3 GetSafeClosestPoint(Collider collider, Vector3 position)
+    {
+        if (collider == null)
+        {
+            return position;
+        }
+
+        if (CanUseClosestPoint(collider))
+        {
+            return collider.ClosestPoint(position);
+        }
+
+        return collider.bounds.ClosestPoint(position);
+    }
+
+    private static bool CanUseClosestPoint(Collider collider)
+    {
+        if (collider is BoxCollider)
+        {
+            return true;
+        }
+
+        if (collider is SphereCollider)
+        {
+            return true;
+        }
+
+        if (collider is CapsuleCollider)
+        {
+            return true;
+        }
+
+        if (collider is MeshCollider meshCollider)
+        {
+            return meshCollider.convex;
+        }
+
+        return false;
+    }
+
     private bool TrySnapSegmentToSurface(Vector3 position, Vector3 normalHint, float radius, out Vector3 snappedPosition, out Vector3 snappedNormal, out Collider surfaceCollider)
     {
         snappedPosition = position;
@@ -500,27 +540,36 @@ public sealed class CentipedeBodyController : MonoBehaviour
             return true;
         }
 
-        Collider[] nearby = Physics.OverlapSphere(position, segmentSurfaceSnapDistance, crawlableSurfaceMask, QueryTriggerInteraction.Ignore);
+        Collider[] nearby = Physics.OverlapSphere(
+            position,
+            segmentSurfaceSnapDistance,
+            crawlableSurfaceMask,
+            QueryTriggerInteraction.Ignore);
+
         for (int i = 0; i < nearby.Length; i++)
         {
             Collider collider = nearby[i];
+
             if (collider == null || collider.isTrigger || collider.transform.IsChildOf(transform))
             {
                 continue;
             }
 
-            Vector3 closest = collider.ClosestPoint(position);
+            Vector3 closest = GetSafeClosestPoint(collider, position);
             Vector3 normal = position - closest;
+
             if (normal.sqrMagnitude < 0.0001f)
             {
                 normal = position - collider.bounds.center;
             }
+
             if (normal.sqrMagnitude < 0.0001f)
             {
                 normal = snappedNormal;
             }
 
             float distance = Vector3.Distance(position, closest);
+
             if (distance < bestDistance)
             {
                 bestDistance = distance;

@@ -5,6 +5,8 @@ public sealed class PlayerDamageReceiver : MonoBehaviour
 {
     [Header("References")]
     [SerializeField] private FPSCharacterController3D fpsController;
+    [SerializeField] private GrapplingHookController3D grapplingHook;
+    [SerializeField] private GrapplePlayerConstraint3D grappleConstraint;
     [SerializeField] private PlayerHealth playerHealth;
 
     [Header("Fall Damage")]
@@ -14,6 +16,9 @@ public sealed class PlayerDamageReceiver : MonoBehaviour
     [SerializeField, Min(0f)] private float fallDamageMultiplier = 1.2f;
     [SerializeField, Min(0f)] private float maxFallDamage = 45f;
     [SerializeField] private AnimationCurve fallDamageCurve;
+    [SerializeField] private bool ignoreFallDamageWhileGrappling = true;
+    [SerializeField, Min(0f)] private float fallDamageGraceAfterGrappleRelease = 0.35f;
+    [SerializeField, Min(0f)] private float minFallTrackingAirTimeAfterGrapple = 0.15f;
 
     [Header("Impact Damage (walls/obstacles)")]
     [SerializeField] private bool enableImpactDamage = true;
@@ -32,11 +37,17 @@ public sealed class PlayerDamageReceiver : MonoBehaviour
     private float maxDownwardSpeed = 0f;
     private Vector3 previousVelocity = Vector3.zero;
     private float lastImpactTime = -999f;
+    private bool wasGrappleActiveLastFrame = false;
+    private float suppressFallDamageUntil = 0f;
+    private float lastGrappleReleaseTime = -999f;
+    private Vector3 lastPosition;
 
     private void Reset()
     {
         fpsController = GetComponent<FPSCharacterController3D>() ?? FindAnyObjectByType<FPSCharacterController3D>();
         playerHealth = GetComponent<PlayerHealth>();
+        grapplingHook = GetComponent<GrapplingHookController3D>() ?? FindAnyObjectByType<GrapplingHookController3D>();
+        grappleConstraint = GetComponent<GrapplePlayerConstraint3D>() ?? GetComponentInChildren<GrapplePlayerConstraint3D>();
     }
 
     private void Awake()
@@ -49,22 +60,89 @@ public sealed class PlayerDamageReceiver : MonoBehaviour
         {
             playerHealth = GetComponent<PlayerHealth>();
         }
+        if (grapplingHook == null)
+        {
+            grapplingHook = GetComponent<GrapplingHookController3D>() ?? UnityEngine.Object.FindAnyObjectByType<GrapplingHookController3D>();
+        }
+        if (grappleConstraint == null)
+        {
+            grappleConstraint = GetComponent<GrapplePlayerConstraint3D>() ?? GetComponentInChildren<GrapplePlayerConstraint3D>();
+        }
+
+        lastPosition = transform.position;
     }
 
     private void Update()
     {
         if (fpsController == null) return;
 
-        Vector3 currentVelocity = fpsController.CurrentVelocity;
+        float dt = Time.deltaTime;
+        Vector3 frameMovementVel = Vector3.zero;
+        if (dt > 0f)
+        {
+            frameMovementVel = (transform.position - lastPosition) / dt;
+        }
 
-        // Track downward (vertical) speed while airborne
+        
+        bool grappleActive = false;
+        if (grapplingHook != null)
+        {
+            var st = grapplingHook.State;
+            if (st != GrapplingHookController3D.GrappleState.Idle && st != GrapplingHookController3D.GrappleState.Released) grappleActive = true;
+            if (grapplingHook.IsLatched) grappleActive = true;
+        }
+
+        if (grappleConstraint != null && (grappleConstraint.IsMantling || grappleConstraint.IsGrappleControlActive))
+        {
+            grappleActive = true;
+        }
+
+        
+        if (ignoreFallDamageWhileGrappling && grappleActive)
+        {
+            if (!wasGrappleActiveLastFrame && showDebugLogs) Debug.Log("[FallDamage] Grapple active - resetting fall tracking");
+            wasGrappleActiveLastFrame = true;
+            ResetFallTracking("grapple active");
+        }
+
+        
+        if (wasGrappleActiveLastFrame && !grappleActive)
+        {
+            wasGrappleActiveLastFrame = false;
+            lastGrappleReleaseTime = Time.time;
+            suppressFallDamageUntil = Time.time + fallDamageGraceAfterGrappleRelease;
+            ResetFallTracking("grapple released");
+            if (showDebugLogs) Debug.Log($"[FallDamage] Grapple released - suppress until {suppressFallDamageUntil:F2}");
+        }
+
+        bool suppressFall = ignoreFallDamageWhileGrappling && Time.time < suppressFallDamageUntil;
+
+        
+        Vector3 currentVelocity = fpsController.CurrentVelocity;
+        if (grappleActive || Time.time < suppressFallDamageUntil)
+        {
+            currentVelocity = frameMovementVel;
+        }
+
         bool grounded = fpsController.IsGrounded;
+
+        if (suppressFall)
+        {
+            
+            maxDownwardSpeed = 0f;
+            previousVelocity = currentVelocity;
+            wasGrounded = grounded;
+            lastPosition = transform.position;
+            return;
+        }
+
+        
         if (!grounded)
         {
             maxDownwardSpeed = Mathf.Min(maxDownwardSpeed, currentVelocity.y);
         }
 
-        // Landing detection
+        
         if (!wasGrounded && grounded)
         {
             HandleLanding();
@@ -73,13 +151,26 @@ public sealed class PlayerDamageReceiver : MonoBehaviour
 
         wasGrounded = grounded;
         previousVelocity = currentVelocity;
+        lastPosition = transform.position;
+    }
+
+    private void ResetFallTracking(string reason = null)
+    {
+        maxDownwardSpeed = 0f;
+        previousVelocity = fpsController != null ? fpsController.CurrentVelocity : Vector3.zero;
+        wasGrounded = fpsController != null ? fpsController.IsGrounded : true;
+        lastPosition = transform.position;
+        if (showDebugLogs && !string.IsNullOrEmpty(reason))
+        {
+            Debug.Log($"[FallDamage] ResetFallTracking: {reason}");
+        }
     }
 
     private void HandleLanding()
     {
         if (!enableFallDamage || playerHealth == null) return;
 
-        float impactSpeed = -maxDownwardSpeed; // positive value
+        float impactSpeed = -maxDownwardSpeed; 
         if (impactSpeed < minFallDamageSpeed)
         {
             if (showDebugLogs) Debug.Log($"[FallDamage] Ignored. impactSpeed={impactSpeed}");
@@ -111,10 +202,10 @@ public sealed class PlayerDamageReceiver : MonoBehaviour
     {
         if (!enableImpactDamage || playerHealth == null) return;
 
-        // ignore layers
+        
         if (((1 << hit.gameObject.layer) & impactDamageMask) == 0) return;
 
-        // avoid mantling: check grapple mantle state if available
+        
         var constraint = FindAnyObjectByType<GrapplePlayerConstraint3D>();
         if (constraint != null && constraint.IsMantling) return;
 
@@ -143,6 +234,6 @@ public sealed class PlayerDamageReceiver : MonoBehaviour
         }
     }
 
-    // Public accessor for other systems that need previous velocity
+    
     public Vector3 PreviousVelocity => previousVelocity;
 }

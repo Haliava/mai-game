@@ -34,7 +34,7 @@ public sealed class DescentSphereTrigger : MonoBehaviour
         if (triggered) return;
         if (!enableOverlapFallback) return;
 
-        // fallback for CharacterController cases where triggers may not fire reliably
+        
         Collider col = ownCollider;
         Vector3 center = transform.position;
         float radius = overlapRadiusOverride > 0f ? overlapRadiusOverride : (col != null ? Mathf.Max(0.25f, col.bounds.extents.magnitude) : 0.5f);
@@ -50,16 +50,16 @@ public sealed class DescentSphereTrigger : MonoBehaviour
         }
     }
 
-    // Make this callable from other objects (collision fallbacks)
+    
     public void HandleTriggered(Transform playerTransform)
     {
         if (triggered) return;
 
-        // disable existing VictorySphereInteractable if present (keeps legacy UI disabled)
+        
         var old = GetComponent<VictorySphereInteractable>();
         if (old != null) old.enabled = false;
 
-        // check from-below logic
+        
         bool fromBelow = true;
         if (requireTouchFromBelow && playerTransform != null)
         {
@@ -77,19 +77,19 @@ public sealed class DescentSphereTrigger : MonoBehaviour
 
         if (!fromBelow)
         {
-            // not a valid from-below touch
+            
             triggered = false;
             return;
         }
 
         Debug.Log("DescentSphereTrigger: triggered valid touch from below.");
 
-        // resolve manager safely
+        
         var mgr = ResolveManager();
         if (mgr == null)
         {
             Debug.LogError("DescentSphereTrigger: valid touch detected, but EndlessDescentGameManager.Instance is NULL. Level completion cannot continue.");
-            // allow retry
+            
             triggered = false;
             return;
         }
@@ -99,7 +99,7 @@ public sealed class DescentSphereTrigger : MonoBehaviour
         bool accepted = false;
         try
         {
-            // prefer new TryCompleteCurrentLevel API, fallback to legacy CompleteCurrentLevel
+            
             var tryMethod = typeof(EndlessDescentGameManager).GetMethod("TryCompleteCurrentLevel", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
             if (tryMethod != null)
             {
@@ -130,7 +130,7 @@ public sealed class DescentSphereTrigger : MonoBehaviour
         }
         else
         {
-            // allow retry if manager didn't accept
+            
             triggered = false;
         }
     }

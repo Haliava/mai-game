@@ -28,7 +28,7 @@ public sealed class GrappleRope3D : MonoBehaviour
     public bool IsExtensionBlocked => false;
     public bool IsFullyExtended => ropeActive && currentRopeLength >= maxRopeLength - 0.001f;
 
-    // Compatibility with old code.
+    
     public int WrapPointCount => 0;
     public float RopeRadius => 0.035f;
 
@@ -89,7 +89,7 @@ public sealed class GrappleRope3D : MonoBehaviour
         UpdateRopeVisual();
     }
 
-    // Compatibility method. No-op now.
+    
     public void ConfigureWrap(
         LayerMask collisionMask,
         float radius,
@@ -139,7 +139,7 @@ public sealed class GrappleRope3D : MonoBehaviour
         UpdateRopeVisual();
     }
 
-    // Compatibility with old controller.
+    
     public void LockLengthToCurrentPathWithoutStretch()
     {
         LockLengthToCurrentDirectDistance();
@@ -164,7 +164,7 @@ public sealed class GrappleRope3D : MonoBehaviour
         return SetCurrentLength(Mathf.Clamp(currentRopeLength + deltaLength, safeMinimum, maxRopeLength));
     }
 
-    // Compatibility method. No-op: rope no longer wraps.
+    
     public void UpdateWrapPoints(
         LayerMask collisionMask,
         float radius,

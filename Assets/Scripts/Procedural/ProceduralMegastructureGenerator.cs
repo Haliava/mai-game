@@ -244,16 +244,16 @@ public sealed class ProceduralMegastructureGenerator : MonoBehaviour
         Debug.Log(BuildSummary("Generated"), this);
     }
 
-    /// <summary>
-    /// Runtime generation API for endless mode. Produces an independent per-level root named "Level_{index}"
-    /// under the provided parent and returns the LevelInstanceRoot component attached to it.
-    /// This method does NOT clear or destroy any existing generated roots and is safe for streaming runtime use.
-    /// </summary>
+    
+    
+    
+    
+    
     public LevelInstanceRoot GenerateLevelInstance(int levelIndex, float baseY, int seed, Transform parent)
     {
         ApplySettingsAsset();
 
-        // deterministically seed rng for this instance
+        
         System.Random rng = new(seed);
         ResetStats();
         EnsureFallbackMaterials();
@@ -263,7 +263,7 @@ public sealed class ProceduralMegastructureGenerator : MonoBehaviour
 
         string rootName = $"Level_{levelIndex}";
         GameObject root = new(rootName);
-        // parent the root (preserve world positions)
+        
         if (parent != null) root.transform.SetParent(parent, true);
         root.transform.position = new Vector3(0f, baseY, 0f);
 
@@ -281,7 +281,7 @@ public sealed class ProceduralMegastructureGenerator : MonoBehaviour
         ValidateLevel();
         Debug.Log(BuildSummary("GeneratedInstance"), this);
 
-        // compute bounds of generated level
+        
         Bounds totalBounds = new Bounds(root.transform.position, Vector3.zero);
         bool hasBounds = false;
         var rends = root.GetComponentsInChildren<Renderer>(true);
@@ -326,10 +326,10 @@ public sealed class ProceduralMegastructureGenerator : MonoBehaviour
             levelComp.GameplayBounds = totalBounds;
         }
 
-        // attach a LevelTransitionAnchors container and populate anchors
+        
         var anchorsComp = root.AddComponent<LevelTransitionAnchors>();
 
-        // create or find an entry anchor (top-most point)
+        
         Transform foundEntry = null;
         foreach (var t in root.GetComponentsInChildren<Transform>(true))
         {
@@ -367,7 +367,7 @@ public sealed class ProceduralMegastructureGenerator : MonoBehaviour
             Debug.Log($"ProceduralMegastructureGenerator: found existing EntryAnchor '{foundEntry.name}' for '{root.name}' at {foundEntry.position}", this);
         }
 
-        // find DescentSphereTrigger in this level to assign ExitAnchor if present
+        
         var ds = root.GetComponentInChildren<DescentSphereTrigger>(true);
         if (ds != null)
         {
@@ -378,7 +378,7 @@ public sealed class ProceduralMegastructureGenerator : MonoBehaviour
             Debug.Log($"ProceduralMegastructureGenerator: assigned ExitAnchor from DescentSphereTrigger '{ds.gameObject.name}' for '{root.name}'", this);
         }
 
-        // create a modest set of centipede spawn anchors from wall/structure anchors populated during generation
+        
         levelComp.CentipedeSpawnAnchors = new List<Transform>();
         int spawnIndex = 0;
         int maxAnchors = 24;
@@ -680,7 +680,7 @@ public sealed class ProceduralMegastructureGenerator : MonoBehaviour
             generatedStructureBounds.Add(collider.bounds);
         }
 
-        // mark this floor as a transition removal object so managers can reliably find and remove it
+        
         try
         {
             var marker = floor.AddComponent<LevelTransitionRemovalObject>();

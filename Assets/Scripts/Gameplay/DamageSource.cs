@@ -10,6 +10,7 @@ public sealed class DamageSource : MonoBehaviour
     [SerializeField] private bool damagePlayerOnTouch = true;
     [SerializeField] private bool useRelativeVelocityBonus = false;
     [SerializeField, Min(0f)] private float velocityDamageMultiplier = 0.2f;
+    [SerializeField, Min(0f)] private float minContactDamageSpeed = 0f;
 
     private readonly Dictionary<GameObject, float> lastHitTime = new();
 
@@ -23,20 +24,33 @@ public sealed class DamageSource : MonoBehaviour
         var health = target.GetComponent<PlayerHealth>();
         if (health == null)
         {
-            // maybe parented
+            
             health = target.GetComponentInParent<PlayerHealth>();
         }
         if (health == null) return;
 
+        
+        
+        PlayerDamageReceiver pdr = health.GetComponent<PlayerDamageReceiver>();
+        if (pdr == null) pdr = health.GetComponentInParent<PlayerDamageReceiver>();
+        Rigidbody rb = null;
+        if (pdr == null)
+        {
+            rb = target.GetComponent<Rigidbody>() ?? target.GetComponentInParent<Rigidbody>();
+        }
+
+        float targetSpeed = 0f;
+        if (pdr != null) targetSpeed = pdr.PreviousVelocity.magnitude;
+        else if (rb != null) targetSpeed = rb.linearVelocity.magnitude;
+
+        
+        if (targetSpeed < minContactDamageSpeed) return;
+
         float damage = contactDamage;
         if (useRelativeVelocityBonus)
         {
-            var pdr = target.GetComponent<PlayerDamageReceiver>();
-            if (pdr != null)
-            {
-                float extra = pdr.PreviousVelocity.magnitude * velocityDamageMultiplier;
-                damage += extra;
-            }
+            float speedForBonus = (pdr != null) ? pdr.PreviousVelocity.magnitude : (rb != null ? rb.linearVelocity.magnitude : 0f);
+            damage += speedForBonus * velocityDamageMultiplier;
         }
 
         health.TakeDamage(damage, DamageType.EnemyContact, gameObject);

@@ -1,9 +1,9 @@
 using UnityEngine;
 
-/// <summary>
-/// Small helper that ensures the Player GameObject has PlayerHealth and PlayerDamageReceiver attached at runtime.
-/// Adds UI if missing.
-/// </summary>
+
+
+
+
 [DefaultExecutionOrder(-10)]
 public sealed class PlayerHealthBootstrap : MonoBehaviour
 {
@@ -23,7 +23,7 @@ public sealed class PlayerHealthBootstrap : MonoBehaviour
         var ui = PlayerHealthUI.EnsureInScene();
         if (ui != null) ui.RegisterHealth(ph);
 
-        // Ensure EndlessDescentGameManager is present for endless runs
+        
         if (EndlessDescentGameManager.Instance == null)
         {
             GameObject gm = new GameObject("EndlessDescentManager");

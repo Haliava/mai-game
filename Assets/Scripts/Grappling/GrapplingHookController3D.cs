@@ -211,7 +211,7 @@ public sealed class GrapplingHookController3D : MonoBehaviour
             activeHook.MarkReleased();
         }
 
-        // notify player constraint to end grapple-controlled movement before cleaning up
+        
         if (playerConstraint != null)
         {
             playerConstraint.HandleGrappleReleased();

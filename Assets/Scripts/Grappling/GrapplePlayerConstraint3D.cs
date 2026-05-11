@@ -10,6 +10,7 @@ public sealed class GrapplePlayerConstraint3D : MonoBehaviour
     [SerializeField] private CharacterController characterController;
     [SerializeField] private Rigidbody playerRigidbody;
     [SerializeField] private Camera playerCamera;
+    [SerializeField] private FPSCharacterController3D fpsController;
 
     [Header("Rope Movement")]
     [SerializeField, Min(0f)] private float minRopeLength = 1.5f;
@@ -32,8 +33,21 @@ public sealed class GrapplePlayerConstraint3D : MonoBehaviour
     [Header("Debug")]
     [SerializeField] private bool showDebugGizmos = true;
 
+    [Header("Grapple Tuning")]
+    [SerializeField, Min(0f)] private float maxConstraintCorrectionSpeed = 18f;
+    [SerializeField, Min(0f)] private float constraintCorrectionStrength = 12f;
+    [SerializeField, Min(0f)] private float maxGrappleSpeed = 22f;
+    [SerializeField, Min(0f)] private float maxReleaseSpeed = 16f;
+    [SerializeField, Min(0f)] private float maxDownwardReleaseSpeed = 8f;
+    [SerializeField] private float grappleGravity = -18f;
+
     private bool isMantling;
     private Vector3 characterExternalVelocity;
+
+    // Grapple movement lifecycle
+    private bool grappleControlActive;
+    private Vector3 grappleVelocity;
+    private bool wasLatchedLastFrame;
 
     public bool IsMantling => isMantling;
 
@@ -56,16 +70,118 @@ public sealed class GrapplePlayerConstraint3D : MonoBehaviour
 
         if (grappleController == null || grappleController.ActiveHook == null || grappleController.Rope == null)
         {
+            if (grappleControlActive)
+            {
+                EndGrappleMovementControl();
+            }
             return;
         }
 
-        if (!grappleController.ActiveHook.IsLatched || !grappleController.Rope.IsActive)
+        GrappleHookProjectile3D hook = grappleController.ActiveHook;
+        GrappleRope3D rope = grappleController.Rope;
+        Transform anchor = grappleController.PlayerGrappleAnchor;
+
+        if (hook == null || rope == null || anchor == null || !rope.IsActive)
+        {
+            if (grappleControlActive)
+            {
+                EndGrappleMovementControl();
+            }
+            return;
+        }
+
+        bool isLatched = hook.IsLatched;
+
+        // lifecycle transition detection
+        if (isLatched && !wasLatchedLastFrame)
+        {
+            HandleGrappleLatched();
+        }
+
+        if (!isLatched && wasLatchedLastFrame)
+        {
+            HandleGrappleReleased();
+        }
+
+        wasLatchedLastFrame = isLatched;
+
+        if (!isLatched)
         {
             return;
         }
 
+        if (!grappleControlActive)
+        {
+            BeginGrappleMovementControl();
+        }
+
+        // Process inputs and physics in a single place and call Move once at the end
         HandleReelInput();
-        ApplySimpleRopeConstraint();
+
+        float dt = Time.fixedDeltaTime;
+        Vector3 latchPoint = hook.LatchPoint;
+        Vector3 anchorPosition = anchor.position;
+        Vector3 fromLatch = anchorPosition - latchPoint;
+        float distance = fromLatch.magnitude;
+        if (distance < 0.0001f) distance = 0.0001f;
+        Vector3 ropeDirectionFromLatch = fromLatch / distance;
+
+        // gravity
+        grappleVelocity += Vector3.up * grappleGravity * dt;
+
+        // swing input -> add tangential impulse
+        Vector3 moveInput = GetMoveInputWorld();
+        if (moveInput.sqrMagnitude > 0.0001f)
+        {
+            Vector3 tangent = Vector3.ProjectOnPlane(moveInput, ropeDirectionFromLatch);
+            if (tangent.sqrMagnitude > 0.0001f)
+            {
+                grappleVelocity += tangent.normalized * swingForce * dt;
+            }
+        }
+
+        // reel-in pull contributes to grapple velocity
+        if (IsReelInHeld())
+        {
+            Vector3 pullDirection = (latchPoint - anchorPosition).normalized;
+            grappleVelocity += pullDirection * pullStrength * dt;
+        }
+
+        // damping
+        if (damping > 0f)
+        {
+            grappleVelocity = Vector3.Lerp(grappleVelocity, Vector3.zero, damping * dt);
+        }
+
+        // soft rope constraint correction (no snap)
+        float allowedLength = Mathf.Max(minRopeLength, rope.CurrentRopeLength);
+        Vector3 correction = Vector3.zero;
+        if (distance > allowedLength + ropeStretchTolerance)
+        {
+            float excess = distance - allowedLength;
+            Vector3 desiredCorrection = -ropeDirectionFromLatch * excess;
+            float maxCorrection = maxConstraintCorrectionSpeed * dt;
+            correction = Vector3.ClampMagnitude(desiredCorrection, maxCorrection);
+
+            // remove outward component from grappleVelocity
+            float outwardComponent = Vector3.Dot(grappleVelocity, ropeDirectionFromLatch);
+            if (outwardComponent > 0f)
+            {
+                grappleVelocity -= ropeDirectionFromLatch * outwardComponent;
+            }
+        }
+
+        // clamp grapple velocity
+        if (grappleVelocity.magnitude > maxGrappleSpeed)
+        {
+            grappleVelocity = grappleVelocity.normalized * maxGrappleSpeed;
+        }
+
+        Vector3 delta = grappleVelocity * dt + correction;
+
+        // single Move call per FixedUpdate
+        ApplyFinalMove(delta);
+
         TryStartForceMantle();
     }
 
@@ -89,6 +205,10 @@ public sealed class GrapplePlayerConstraint3D : MonoBehaviour
         if (playerCamera == null)
         {
             playerCamera = GetComponentInChildren<Camera>();
+        }
+        if (fpsController == null)
+        {
+            fpsController = GetComponent<FPSCharacterController3D>() ?? UnityEngine.Object.FindAnyObjectByType<FPSCharacterController3D>();
         }
     }
 
@@ -361,6 +481,12 @@ public sealed class GrapplePlayerConstraint3D : MonoBehaviour
             return;
         }
 
+        if (grappleControlActive)
+        {
+            grappleVelocity += velocityDelta;
+            return;
+        }
+
         if (playerRigidbody != null && !playerRigidbody.isKinematic)
         {
             playerRigidbody.linearVelocity += velocityDelta;
@@ -379,6 +505,16 @@ public sealed class GrapplePlayerConstraint3D : MonoBehaviour
 
     private void RemoveOutwardVelocity(Vector3 ropeDirectionFromLatch)
     {
+        if (grappleControlActive)
+        {
+            float outward = Vector3.Dot(grappleVelocity, ropeDirectionFromLatch);
+            if (outward > 0f)
+            {
+                grappleVelocity -= ropeDirectionFromLatch * outward;
+            }
+
+            return;
+        }
         if (playerRigidbody != null && !playerRigidbody.isKinematic)
         {
             Vector3 velocity = playerRigidbody.linearVelocity;
@@ -417,10 +553,113 @@ public sealed class GrapplePlayerConstraint3D : MonoBehaviour
             return;
         }
 
+        if (grappleControlActive)
+        {
+            grappleVelocity = Vector3.Lerp(grappleVelocity, Vector3.zero, damping * Time.fixedDeltaTime);
+            return;
+        }
+
         characterExternalVelocity = Vector3.Lerp(
             characterExternalVelocity,
             Vector3.zero,
             damping * Time.fixedDeltaTime);
+    }
+
+    private void BeginGrappleMovementControl()
+    {
+        grappleControlActive = true;
+        grappleVelocity = fpsController != null ? fpsController.CurrentVelocity : Vector3.zero;
+        characterExternalVelocity = Vector3.zero;
+
+        if (fpsController != null)
+        {
+            fpsController.SetGrappleMovementPaused(true);
+            fpsController.ClearExternalVelocity();
+            fpsController.SetCurrentVelocity(Vector3.zero);
+            fpsController.SetGrappleMovementControlActive(true);
+            Debug.Log("[GrappleMovement] Begin control");
+        }
+    }
+
+    private void EndGrappleMovementControl()
+    {
+        Vector3 rawVelocity = grappleVelocity;
+        Vector3 releaseVelocity = GetSafeReleaseVelocity();
+
+        if (fpsController != null)
+        {
+            fpsController.SetGrappleMovementPaused(false);
+            fpsController.SetGrappleMovementControlActive(false);
+            if (rawVelocity != releaseVelocity)
+            {
+                Debug.Log($"[GrappleMovement] Clamped release velocity from {rawVelocity} to {releaseVelocity}");
+            }
+
+            fpsController.SetCurrentVelocity(releaseVelocity);
+            fpsController.ClearExternalVelocity();
+            Debug.Log($"[GrappleMovement] Release. rawVelocity={rawVelocity}, safeVelocity={releaseVelocity}");
+        }
+
+        grappleControlActive = false;
+        grappleVelocity = Vector3.zero;
+        characterExternalVelocity = Vector3.zero;
+    }
+
+    public void HandleGrappleLatched()
+    {
+        if (!grappleControlActive)
+        {
+            BeginGrappleMovementControl();
+        }
+    }
+
+    public void HandleGrappleReleased()
+    {
+        if (grappleControlActive)
+        {
+            EndGrappleMovementControl();
+        }
+    }
+
+    private Vector3 GetSafeReleaseVelocity()
+    {
+        Vector3 v = grappleVelocity;
+        if (v.magnitude > maxReleaseSpeed)
+        {
+            v = v.normalized * maxReleaseSpeed;
+        }
+
+        if (v.y < -maxDownwardReleaseSpeed)
+        {
+            v.y = -maxDownwardReleaseSpeed;
+        }
+
+        return v;
+    }
+
+    private void ApplyFinalMove(Vector3 delta)
+    {
+        if (delta.sqrMagnitude <= 0f)
+        {
+            return;
+        }
+
+        if (characterController != null && characterController.enabled)
+        {
+            characterController.Move(delta);
+            Physics.SyncTransforms();
+            return;
+        }
+
+        if (playerRigidbody != null && !playerRigidbody.isKinematic)
+        {
+            playerRigidbody.MovePosition(playerRigidbody.position + delta);
+            Physics.SyncTransforms();
+            return;
+        }
+
+        transform.position += delta;
+        Physics.SyncTransforms();
     }
 
     private bool IsReelInHeld()

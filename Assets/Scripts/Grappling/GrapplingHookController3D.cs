@@ -54,6 +54,7 @@ public sealed class GrapplingHookController3D : MonoBehaviour
     private GrappleHookProjectile3D activeHook;
     private Collider[] playerColliders;
     private bool latchedRopeLengthLocked;
+    [SerializeField] private GrapplePlayerConstraint3D playerConstraint;
 
     public GrappleState State => state;
     public GrappleHookProjectile3D ActiveHook => activeHook;
@@ -210,6 +211,12 @@ public sealed class GrapplingHookController3D : MonoBehaviour
             activeHook.MarkReleased();
         }
 
+        // notify player constraint to end grapple-controlled movement before cleaning up
+        if (playerConstraint != null)
+        {
+            playerConstraint.HandleGrappleReleased();
+        }
+
         if (activeHookObject != null)
         {
             Destroy(activeHookObject);
@@ -247,6 +254,10 @@ public sealed class GrapplingHookController3D : MonoBehaviour
         }
 
         playerColliders = GetComponentsInChildren<Collider>();
+        if (playerConstraint == null)
+        {
+            playerConstraint = GetComponent<GrapplePlayerConstraint3D>();
+        }
     }
 
     private Vector3 GetFireDirection()
